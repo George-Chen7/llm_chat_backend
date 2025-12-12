@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
+	"io"
 	"net/http"
-	"time"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,6 +30,59 @@ func HandleChatStream(c *gin.Context) {
 	// [TODO B 模块集成]: 1. 调用服务解析并验证用户 JWT Token。如果验证失败，返回 401 Unauthorized。
 	// [TODO B 模块集成]: 2. 调用服务检查用户当前剩余配额是否足够开始对话。如果配额不足，返回 403 Forbidden。
 
+	// 准备转发到 LLM 的请求
+	llmURL := c.GetString("llm_base_url")
+	if llmURL == "" {
+		llmURL = "https://example-llm.api/chat/stream" // 占位：请替换为真实 LLM 流式接口地址
+	}
+	apiKey := c.GetString("llm_api_key") // 占位：可由中间件或配置注入
+
+	// 组装 messages：简单将历史与当前消息串联
+	messages := make([]map[string]string, 0, len(req.History)+1)
+	for _, h := range req.History {
+		messages = append(messages, map[string]string{"role": "user", "content": h})
+	}
+	messages = append(messages, map[string]string{"role": "user", "content": req.Message})
+
+	llmPayload := map[string]any{
+		"messages": messages,
+		"stream":   true,
+	}
+	payloadBytes, err := json.Marshal(llmPayload)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to marshal llm payload"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, llmURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to build llm request"})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+
+	client := &http.Client{} // 可根据需要设置超时或连接池
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to call llm service", "detail": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error":  "llm service returned non-200",
+			"status": resp.StatusCode,
+			"body":   string(body),
+		})
+		return
+	}
+
 	// 设置 SSE 响应头
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
@@ -37,45 +94,46 @@ func HandleChatStream(c *gin.Context) {
 		return
 	}
 
-	// 模拟 LLM 流式输出的 channel
-	stream := make(chan string)
+	scanner := bufio.NewScanner(resp.Body)
+	// 增大 buffer 以防止行过长
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
 
-	go func() {
-		defer close(stream)
-		chunks := []string{"Hello", " world", " from", " LLM!"}
-		for _, chunk := range chunks {
-			time.Sleep(100 * time.Millisecond)
-			stream <- chunk
-		}
-		stream <- "[DONE]"
-	}()
-
-	ctx := c.Request.Context()
-
-	for {
+	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
 			return
-		case chunk, ok := <-stream:
-			if !ok {
-				return
-			}
-
-			if chunk == "[DONE]" {
-				_, _ = c.Writer.WriteString("data: [DONE]\n\n")
-				flusher.Flush()
-				// [TODO B 模块集成]: 3. 在 LLM 成功返回数据后（即在退出 SSE 循环之前），调用 Yang 的服务，根据实际生成的 tokens 数量，进行最终的配额扣减和历史记录保存。
-				return
-			}
-
-			payload, err := json.Marshal(gin.H{"text": chunk})
-			if err != nil {
-				// 序列化失败终止流
-				return
-			}
-
-			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", payload))
-			flusher.Flush()
+		default:
 		}
+
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" {
+			continue
+		}
+
+		if data == "[DONE]" {
+			_, _ = c.Writer.WriteString("data: [DONE]\n\n")
+			flusher.Flush()
+			// [TODO B 模块集成]: 3. 在 LLM 成功返回数据后（即在退出 SSE 循环之前），调用 Yang 的服务，根据实际生成的 tokens 数量，进行最终的配额扣减和历史记录保存。
+			return
+		}
+
+		// 将 LLM 返回的 chunk 原样再包装为 SSE
+		_, _ = c.Writer.WriteString("data: " + data + "\n\n")
+		flusher.Flush()
+	}
+
+	if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
+		// 仅记录错误，不再写入客户端
+		return
 	}
 }

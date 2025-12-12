@@ -40,10 +40,6 @@ func HandleGetQuota(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "getQuota placeholder"})
 }
 
-func HandleTTSConvert(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "tts convert placeholder"})
-}
-
 func HandleAddUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "addUser placeholder"})
 }
@@ -59,4 +55,3 @@ func HandleSetQuota(c *gin.Context) {
 func HandleGetUserList(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "getUser placeholder"})
 }
-

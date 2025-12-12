@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/rand"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -32,9 +33,8 @@ func HandleTTSConvert(c *gin.Context) {
 	// 设置音频流响应头
 	c.Header("Content-Type", "audio/mp3")
 	c.Header("Content-Disposition", `attachment; filename="tts_output.mp3"`)
-	c.Header("Content-Length", string(len(audio)))
+	c.Header("Content-Length", strconv.Itoa(len(audio)))
 
 	c.Writer.WriteHeader(http.StatusOK)
 	_, _ = c.Writer.Write(audio)
 }
-

@@ -5,4 +5,3 @@ server:
 llm:
   base_url: "https://api.example.com/v1"
   api_key: "YOUR_API_KEY"
-

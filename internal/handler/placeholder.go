@@ -40,10 +40,6 @@ func HandleGetQuota(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "getQuota placeholder"})
 }
 
-func HandleSTTUpload(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"message": "stt upload placeholder"})
-}
-
 func HandleTTSConvert(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "tts convert placeholder"})
 }

@@ -2,37 +2,36 @@ package handler
 
 import (
 	"crypto/rand"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-// TTSRequest 定义文本转语音请求体。
 type TTSRequest struct {
-	Text string `json:"text" binding:"required"`
+	Text string `json:"text"`
 }
 
-// HandleTTSConvert 处理文本转语音请求（占位实现）。
 func HandleTTSConvert(c *gin.Context) {
-	var req TTSRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.Text == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request: text is required"})
+	messageID := c.Param("message_id")
+	if strings.TrimSpace(messageID) == "" {
+		c.JSON(http.StatusBadRequest, BaseResponse{ErrMsg: "missing message_id", ErrCode: 400})
 		return
 	}
+	var req TTSRequest
+	_ = c.ShouldBindJSON(&req)
+	fmt.Printf("TTS request received: message_id=%s, text=%s\n", messageID, req.Text)
 
-	// [TODO TTS 云 API 对接]: 构造 HTTP 请求并将文本发送给云 TTS 服务的 API。
-
-	// 模拟云端返回的音频数据（长度 512 的随机字节）
 	audio := make([]byte, 512)
 	if _, err := rand.Read(audio); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate audio data"})
+		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "failed to generate audio data", ErrCode: 500})
 		return
 	}
 
-	// 设置音频流响应头
-	c.Header("Content-Type", "audio/mp3")
-	c.Header("Content-Disposition", `attachment; filename="tts_output.mp3"`)
+	c.Header("Content-Type", "audio/wav")
+	c.Header("Content-Disposition", `attachment; filename="tts_output.wav"`)
 	c.Header("Content-Length", strconv.Itoa(len(audio)))
 
 	c.Writer.WriteHeader(http.StatusOK)

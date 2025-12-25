@@ -12,16 +12,17 @@ import (
 )
 
 type User struct {
-	ID         int    `json:"id"`
-	Username   string `json:"username"`
-	Quota      int    `json:"quota"`
-	UsedQuota  int    `json:"used_quota"`
-	UpdateTime int64  `json:"update_time"`
+	UserID         int    `json:"user_id"`
+	Username       string `json:"username"`
+	Nickname       string `json:"nickname"`
+	Role           string `json:"role"`
+	TotalQuota     int    `json:"total_quota"`
+	RemainingQuota int    `json:"remaining_quota"`
 }
 
 var mockUserList = []User{
-	{ID: 1, Username: "admin", Quota: 10000, UsedQuota: 500, UpdateTime: time.Now().Unix()},
-	{ID: 2, Username: "yang", Quota: 5000, UsedQuota: 0, UpdateTime: time.Now().Unix()},
+	{UserID: 1, Username: "admin", Nickname: "Admin", Role: "ADMIN", TotalQuota: 10000, RemainingQuota: 9500},
+	{UserID: 2, Username: "yang", Nickname: "Yang", Role: "USER", TotalQuota: 5000, RemainingQuota: 5000},
 }
 var nextUserID = 3
 
@@ -38,19 +39,14 @@ func HandleLogin(c *gin.Context) {
 	tokenString, _ := token.SignedString(middlewares.JWTSecret)
 
 	c.JSON(http.StatusOK, gin.H{
-		"err_msg":     "success",
-		"err_code":    0,
-		"jwt_token":   tokenString,
-		"expire_time": claims.ExpiresAt.Unix(),
-		"user_info": gin.H{
-			"id":       1,
-			"username": username,
-		},
+		"err_msg":   "success",
+		"err_code":  0,
+		"jwt_token": tokenString,
 	})
 }
 
 func HandleGetUserList(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	page, _ := strconv.Atoi(c.DefaultQuery("current_page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
 
 	totalCount := len(mockUserList)
@@ -72,14 +68,17 @@ func HandleGetUserList(c *gin.Context) {
 		"total_count":  totalCount,
 		"current_page": page,
 		"page_size":    pageSize,
-		"list":         mockUserList[start:end],
+		"users":        mockUserList[start:end],
 	})
 }
 
 func HandleAddUser(c *gin.Context) {
 	var req struct {
-		Username string `json:"username" binding:"required"`
-		Quota    int    `json:"quota"`
+		Username       string `json:"username" binding:"required"`
+		Nickname       string `json:"nickname" binding:"required"`
+		Role           string `json:"role" binding:"required"`
+		TotalQuota     int    `json:"total_quota"`
+		RemainingQuota int    `json:"remaining_quota"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "invalid params", ErrCode: 400})
@@ -93,17 +92,30 @@ func HandleAddUser(c *gin.Context) {
 		}
 	}
 
-	newUser := User{ID: nextUserID, Username: req.Username, Quota: req.Quota, UpdateTime: time.Now().Unix()}
+	newUser := User{
+		UserID:         nextUserID,
+		Username:       req.Username,
+		Nickname:       req.Nickname,
+		Role:           req.Role,
+		TotalQuota:     req.TotalQuota,
+		RemainingQuota: req.RemainingQuota,
+	}
 	mockUserList = append(mockUserList, newUser)
 	nextUserID++
 
-	c.JSON(http.StatusOK, BaseResponse{ErrMsg: "success", ErrCode: 0})
+	c.JSON(http.StatusOK, gin.H{
+		"err_msg":  "success",
+		"err_code": 0,
+		"user":     newUser,
+	})
 }
 
 func HandleSetQuota(c *gin.Context) {
+	userIDStr := c.Param("user_id")
+	userID, _ := strconv.Atoi(userIDStr)
+
 	var req struct {
-		UserID int `json:"user_id" binding:"required"`
-		Quota  int `json:"quota" binding:"required"`
+		Quota int `json:"quota" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "invalid params", ErrCode: 400})
@@ -111,8 +123,8 @@ func HandleSetQuota(c *gin.Context) {
 	}
 
 	for i := range mockUserList {
-		if mockUserList[i].ID == req.UserID {
-			mockUserList[i].Quota = req.Quota
+		if mockUserList[i].UserID == userID {
+			mockUserList[i].TotalQuota = req.Quota
 			c.JSON(http.StatusOK, BaseResponse{ErrMsg: "success", ErrCode: 0})
 			return
 		}
@@ -123,28 +135,78 @@ func HandleSetQuota(c *gin.Context) {
 func HandleSetPassword(c *gin.Context) {
 	c.JSON(http.StatusOK, BaseResponse{ErrMsg: "success", ErrCode: 0})
 }
+
 func HandleRefreshToken(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"err_msg": "success", "err_code": 0, "jwt_token": "new_token"})
+	c.JSON(http.StatusOK, gin.H{
+		"err_msg":   "success",
+		"err_code":  0,
+		"jwt_token": "new_token",
+	})
 }
+
 func HandleNewChat(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"err_msg": "success", "err_code": 0, "conversation_id": "conv_new"})
+	var req struct {
+		Title        string `json:"title" binding:"required"`
+		SystemPrompt string `json:"system_prompt"`
+	}
+	_ = c.ShouldBindJSON(&req)
+
+	conv := gin.H{
+		"conversation_id": 1001,
+		"title":           req.Title,
+		"status":          "ACTIVE",
+		"llm_model":       "gpt-4o",
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"err_msg":      "success",
+		"err_code":     0,
+		"conversation": conv,
+	})
 }
+
 func HandleRenameChat(c *gin.Context) {
 	c.JSON(http.StatusOK, BaseResponse{ErrMsg: "success", ErrCode: 0})
 }
+
 func HandleDeleteChat(c *gin.Context) {
 	c.JSON(http.StatusOK, BaseResponse{ErrMsg: "success", ErrCode: 0})
 }
+
 func HandleGetChatHistory(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("current_page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
+
+	msgs := []gin.H{
+		{
+			"message_id":   1,
+			"sender_type":  "USER",
+			"content_type": "TEXT",
+			"content":      "Hello",
+			"token_total":  5,
+			"attachments":  []any{},
+		},
+		{
+			"message_id":   2,
+			"sender_type":  "ASSISTANT",
+			"content_type": "TEXT",
+			"content":      "Hi there!",
+			"token_total":  8,
+			"attachments":  []any{},
+		},
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"err_msg": "success", "err_code": 0,
-		"total_page": 1, "total_count": 1, "current_page": 1, "page_size": 10,
-		"list": []gin.H{{"conversation_id": "c1", "title": "History", "update_time": time.Now().Unix()}},
+		"err_msg":      "success",
+		"err_code":     0,
+		"total_page":   1,
+		"total_count":  2,
+		"current_page": page,
+		"page_size":    pageSize,
+		"messages":     msgs,
 	})
 }
-func HandleGetQuota(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"err_msg": "success", "err_code": 0, "total_quota": 1000, "used_quota": 100, "remain_quota": 900})
-}
+
 func HandleDeleteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, BaseResponse{ErrMsg: "success", ErrCode: 0})
 }

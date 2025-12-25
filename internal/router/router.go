@@ -38,7 +38,6 @@ func SetupRouter(r *gin.Engine) {
 		chat.POST("/new-conversation", handler.HandleNewChat)
 		chat.PUT("/rename-conversation/:conversation_id", handler.HandleRenameChat)
 		chat.DELETE("/delete-conversation/:conversation_id", handler.HandleDeleteChat)
-		chat.GET("/quota", handler.HandleGetQuota)
 		chat.POST("/upload-file", handler.HandleUploadFile)
 		chat.GET("/prompt-preset", handler.HandleGetPromptPreset)
 	}

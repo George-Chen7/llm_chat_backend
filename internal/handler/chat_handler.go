@@ -1,11 +1,8 @@
 package handler
 
 import (
-	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -38,82 +35,33 @@ func HandleChatStream(c *gin.Context) {
 		llmURL = "https://example-llm.api/chat/stream"
 	}
 	apiKey := c.GetString("llm_api_key")
-	fmt.Printf("HandleChatStream connect base_url=%s\n", llmURL)
 
 	useMock := llmURL == "" || strings.Contains(llmURL, "example-llm.api")
 
-	c.Header("Content-Type", "text/event-stream; charset=utf-8")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-
-	flusher, ok := c.Writer.(http.Flusher)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "streaming unsupported", ErrCode: 500})
-		return
-	}
-
 	if useMock {
-		fmt.Printf("Switching to Mock Mode (early check)\n")
-		for i := 1; i <= 3; i++ {
-			if i == 1 {
-				respObj := map[string]any{
-					"err_msg":  "success",
-					"err_code": 0,
-					"user_message": map[string]any{
-						"message_id":   0,
-						"role":         "USER",
-						"content_type": req.Message.ContentType,
-						"content":      req.Message.Content,
-						"token_total":  0,
-						"attachments":  []any{},
-					},
-					"model_message": map[string]any{
-						"message_id":   0,
-						"role":         "ASSISTANT",
-						"content_type": "TEXT",
-						"content":      fmt.Sprintf("mock chunk %d: %s", i, req.Message.Content),
-						"token_total":  0,
-						"attachments":  []any{},
-					},
-				}
-				b, _ := json.Marshal(respObj)
-				_, _ = c.Writer.WriteString("data: " + string(b) + "\n\n")
-				flusher.Flush()
-				continue
-			}
-			respObj := map[string]any{
-				"err_msg":  "success",
-				"err_code": 0,
-				"model_message": map[string]any{
-					"message_id":   0,
-					"role":         "ASSISTANT",
-					"content_type": "TEXT",
-					"content":      fmt.Sprintf("mock chunk %d: %s", i, req.Message.Content),
-					"token_total":  0,
-					"attachments":  []any{},
-				},
-			}
-			b, _ := json.Marshal(respObj)
-			_, _ = c.Writer.WriteString("data: " + string(b) + "\n\n")
-			flusher.Flush()
+		userMsg := gin.H{
+			"message_id":   1001,
+			"sender_type":  "USER",
+			"content_type": req.Message.ContentType,
+			"content":      req.Message.Content,
+			"token_total":  len(req.Message.Content),
+			"attachments":  []any{},
 		}
-		final := map[string]any{
-			"err_msg":  "success",
-			"err_code": 0,
-			"model_message": map[string]any{
-				"message_id":   0,
-				"role":         "ASSISTANT",
-				"content_type": "TEXT",
-				"content":      "",
-				"token_total":  0,
-				"attachments":  []any{},
-			},
+		modelMsg := gin.H{
+			"message_id":   1002,
+			"sender_type":  "ASSISTANT",
+			"content_type": "TEXT",
+			"content":      "This is a mock response from the assistant.",
+			"token_total":  42,
+			"attachments":  []any{},
 		}
-		bf, _ := json.Marshal(final)
-		_, _ = c.Writer.WriteString("data: " + string(bf) + "\n\n")
-		flusher.Flush()
-		_, _ = c.Writer.WriteString("data: [DONE]\n\n")
-		flusher.Flush()
+
+		c.JSON(http.StatusOK, gin.H{
+			"err_msg":       "success",
+			"err_code":      0,
+			"user_message":  userMsg,
+			"model_message": modelMsg,
+		})
 		return
 	}
 
@@ -123,7 +71,7 @@ func HandleChatStream(c *gin.Context) {
 
 	llmPayload := map[string]any{
 		"messages":        messages,
-		"stream":          true,
+		"stream":          false,
 		"conversation_id": conversationID,
 	}
 	payloadBytes, err := json.Marshal(llmPayload)
@@ -146,238 +94,87 @@ func HandleChatStream(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		fmt.Printf("Switching to Mock Mode (request error)\n")
-		// fallback immediate mock to avoid 502
-		for i := 1; i <= 3; i++ {
-			if i == 1 {
-				respObj := map[string]any{
-					"err_msg":  "success",
-					"err_code": 0,
-					"user_message": map[string]any{
-						"message_id":   0,
-						"role":         "USER",
-						"content_type": req.Message.ContentType,
-						"content":      req.Message.Content,
-						"token_total":  0,
-						"attachments":  []any{},
-					},
-					"model_message": map[string]any{
-						"message_id":   0,
-						"role":         "ASSISTANT",
-						"content_type": "TEXT",
-						"content":      fmt.Sprintf("mock chunk %d: %s", i, req.Message.Content),
-						"token_total":  0,
-						"attachments":  []any{},
-					},
-				}
-				b, _ := json.Marshal(respObj)
-				_, _ = c.Writer.WriteString("data: " + string(b) + "\n\n")
-				flusher.Flush()
-				continue
-			}
-			respObj := map[string]any{
-				"err_msg":  "success",
-				"err_code": 0,
-				"model_message": map[string]any{
-					"message_id":   0,
-					"role":         "ASSISTANT",
-					"content_type": "TEXT",
-					"content":      fmt.Sprintf("mock chunk %d: %s", i, req.Message.Content),
-					"token_total":  0,
-					"attachments":  []any{},
-				},
-			}
-			b, _ := json.Marshal(respObj)
-			_, _ = c.Writer.WriteString("data: " + string(b) + "\n\n")
-			flusher.Flush()
+		userMsg := gin.H{
+			"message_id":   1001,
+			"sender_type":  "USER",
+			"content_type": req.Message.ContentType,
+			"content":      req.Message.Content,
+			"token_total":  len(req.Message.Content),
+			"attachments":  []any{},
 		}
-		final := map[string]any{
-			"err_msg":  "success",
-			"err_code": 0,
-			"model_message": map[string]any{
-				"message_id":   0,
-				"role":         "ASSISTANT",
-				"content_type": "TEXT",
-				"content":      "",
-				"token_total":  0,
-				"attachments":  []any{},
-			},
+		modelMsg := gin.H{
+			"message_id":   1002,
+			"sender_type":  "ASSISTANT",
+			"content_type": "TEXT",
+			"content":      "Assistant mock response due to connection error.",
+			"token_total":  42,
+			"attachments":  []any{},
 		}
-		bf, _ := json.Marshal(final)
-		_, _ = c.Writer.WriteString("data: " + string(bf) + "\n\n")
-		flusher.Flush()
-		_, _ = c.Writer.WriteString("data: [DONE]\n\n")
-		flusher.Flush()
+		c.JSON(http.StatusOK, gin.H{
+			"err_msg":       "success",
+			"err_code":      0,
+			"user_message":  userMsg,
+			"model_message": modelMsg,
+		})
 		return
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Switching to Mock Mode (non-200 response %d)\n", resp.StatusCode)
-		for i := 1; i <= 3; i++ {
-			if i == 1 {
-				respObj := map[string]any{
-					"err_msg":  "success",
-					"err_code": 0,
-					"user_message": map[string]any{
-						"message_id":   0,
-						"role":         "USER",
-						"content_type": req.Message.ContentType,
-						"content":      req.Message.Content,
-						"token_total":  0,
-						"attachments":  []any{},
-					},
-					"model_message": map[string]any{
-						"message_id":   0,
-						"role":         "ASSISTANT",
-						"content_type": "TEXT",
-						"content":      fmt.Sprintf("mock chunk %d: %s", i, req.Message.Content),
-						"token_total":  0,
-						"attachments":  []any{},
-					},
-				}
-				b, _ := json.Marshal(respObj)
-				_, _ = c.Writer.WriteString("data: " + string(b) + "\n\n")
-				flusher.Flush()
-				continue
-			}
-			respObj := map[string]any{
-				"err_msg":  "success",
-				"err_code": 0,
-				"model_message": map[string]any{
-					"message_id":   0,
-					"role":         "ASSISTANT",
-					"content_type": "TEXT",
-					"content":      fmt.Sprintf("mock chunk %d: %s", i, req.Message.Content),
-					"token_total":  0,
-					"attachments":  []any{},
-				},
-			}
-			b, _ := json.Marshal(respObj)
-			_, _ = c.Writer.WriteString("data: " + string(b) + "\n\n")
-			flusher.Flush()
+		userMsg := gin.H{
+			"message_id":   1001,
+			"sender_type":  "USER",
+			"content_type": req.Message.ContentType,
+			"content":      req.Message.Content,
+			"token_total":  len(req.Message.Content),
+			"attachments":  []any{},
 		}
-		final := map[string]any{
-			"err_msg":  "success",
-			"err_code": 0,
-			"model_message": map[string]any{
-				"message_id":   0,
-				"role":         "ASSISTANT",
-				"content_type": "TEXT",
-				"content":      "",
-				"token_total":  0,
-				"attachments":  []any{},
-			},
+		modelMsg := gin.H{
+			"message_id":   1002,
+			"sender_type":  "ASSISTANT",
+			"content_type": "TEXT",
+			"content":      fmt.Sprintf("Assistant mock response due to status %d.", resp.StatusCode),
+			"token_total":  42,
+			"attachments":  []any{},
 		}
-		bf, _ := json.Marshal(final)
-		_, _ = c.Writer.WriteString("data: " + string(bf) + "\n\n")
-		flusher.Flush()
-		_, _ = c.Writer.WriteString("data: [DONE]\n\n")
-		flusher.Flush()
+		c.JSON(http.StatusOK, gin.H{
+			"err_msg":       "success",
+			"err_code":      0,
+			"user_message":  userMsg,
+			"model_message": modelMsg,
+		})
 		return
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-	first := true
-
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-		if data == "" {
-			continue
-		}
-
-		if data == "[DONE]" {
-			final := map[string]any{
-				"err_msg":  "success",
-				"err_code": 0,
-				"model_message": map[string]any{
-					"message_id":   0,
-					"role":         "ASSISTANT",
-					"content_type": "TEXT",
-					"content":      "",
-					"token_total":  0,
-					"attachments":  []any{},
-				},
-			}
-			bf, _ := json.Marshal(final)
-			_, _ = c.Writer.WriteString("data: " + string(bf) + "\n\n")
-			flusher.Flush()
-			_, _ = c.Writer.WriteString("data: [DONE]\n\n")
-			flusher.Flush()
-			return
-		}
-
-		if first {
-			content := data
-			var jm map[string]any
-			if err := json.Unmarshal([]byte(data), &jm); err == nil {
-				if v, ok := jm["content"]; ok {
-					if s, ok := v.(string); ok && s != "" {
-						content = s
-					}
-				}
-			}
-			respObj := map[string]any{
-				"err_msg":  "success",
-				"err_code": 0,
-				"user_message": map[string]any{
-					"message_id":   0,
-					"role":         "USER",
-					"content_type": req.Message.ContentType,
-					"content":      req.Message.Content,
-					"token_total":  0,
-					"attachments":  []any{},
-				},
-				"model_message": map[string]any{
-					"message_id":   0,
-					"role":         "ASSISTANT",
-					"content_type": "TEXT",
-					"content":      content,
-					"token_total":  0,
-					"attachments":  []any{},
-				},
-			}
-			b, _ := json.Marshal(respObj)
-			_, _ = c.Writer.WriteString("data: " + string(b) + "\n\n")
-			flusher.Flush()
-			first = false
-			continue
-		}
-
-		respObj := map[string]any{
-			"err_msg":  "success",
-			"err_code": 0,
-			"model_message": map[string]any{
-				"message_id":   0,
-				"role":         "ASSISTANT",
-				"content_type": "TEXT",
-				"content":      data,
-				"token_total":  0,
-				"attachments":  []any{},
-			},
-		}
-		b, _ := json.Marshal(respObj)
-		_, _ = c.Writer.WriteString("data: " + string(b) + "\n\n")
-		flusher.Flush()
+	var llmResp struct {
+		Content string `json:"content"`
 	}
-
-	if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
+	if err := json.NewDecoder(resp.Body).Decode(&llmResp); err != nil {
+		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "failed to decode llm response", ErrCode: 500})
 		return
 	}
+
+	userMsg := gin.H{
+		"message_id":   2001,
+		"sender_type":  "USER",
+		"content_type": req.Message.ContentType,
+		"content":      req.Message.Content,
+		"token_total":  len(req.Message.Content),
+		"attachments":  []any{},
+	}
+	modelMsg := gin.H{
+		"message_id":   2002,
+		"sender_type":  "ASSISTANT",
+		"content_type": "TEXT",
+		"content":      llmResp.Content,
+		"token_total":  len(llmResp.Content),
+		"attachments":  []any{},
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"err_msg":       "success",
+		"err_code":      0,
+		"user_message":  userMsg,
+		"model_message": modelMsg,
+	})
 }

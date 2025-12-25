@@ -31,7 +31,7 @@ func HandleTTSConvert(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", "audio/wav")
-	c.Header("Content-Disposition", `attachment; filename="tts_output.wav"`)
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="tts_%s.wav"`, messageID))
 	c.Header("Content-Length", strconv.Itoa(len(audio)))
 
 	c.Writer.WriteHeader(http.StatusOK)

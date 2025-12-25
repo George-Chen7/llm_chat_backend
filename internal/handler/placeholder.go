@@ -4,24 +4,42 @@ import (
 	"net/http"
 	"time"
 
+	"backend/internal/middlewares"
+
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // --- 认证相关 ---
 
 // HandleLogin 账号密码登录 - 必须返回 jwt_token
 func HandleLogin(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"err_msg":     "success",
-		"err_code":    0,
-		"jwt_token":   "mock_jwt_token_123456",
-		"expire_time": time.Now().Add(time.Hour * 24).Unix(),
-		"user_info": gin.H{
-			"id":       1,
-			"username": "admin",
-			"avatar":   "",
-		},
-	})
+    // 模拟登录校验逻辑（假设校验通过）
+    username := "admin"
+
+    // 生成 JWT Token
+    claims := middlewares.MyClaims{
+        Username: username,
+        RegisteredClaims: jwt.RegisteredClaims{
+            ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 24)), // 24小时过期
+            IssuedAt:  jwt.NewNumericDate(time.Now()),
+        },
+    }
+    
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    tokenString, _ := token.SignedString(middlewares.JWTSecret)
+
+    c.JSON(http.StatusOK, gin.H{
+        "err_msg":     "success",
+        "err_code":    0,
+        "jwt_token":   tokenString, // 返回真实的 JWT
+        "expire_time": claims.ExpiresAt.Unix(),
+        "user_info": gin.H{
+            "id":       1,
+            "username": username,
+            "avatar":   "",
+        },
+    })
 }
 
 func HandleSetPassword(c *gin.Context) {

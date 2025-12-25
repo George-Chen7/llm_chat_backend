@@ -22,46 +22,46 @@ func NewRouter(cfg *config.Config) *gin.Engine {
 }
 
 func SetupRouter(r *gin.Engine) {
-	// 健康检查
+	// health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// --- 1. 认证模块 (对齐 /auth/...) ---
+	// auth module
 	auth := r.Group("/auth")
 	{
-		auth.POST("/login", handler.HandleLogin)             // 对齐 OpenAPI: /auth/login
-		auth.POST("/reset-password", handler.HandleSetPassword) // 对齐 OpenAPI: /auth/reset-password
-		auth.POST("/refresh-token", handler.HandleRefreshToken) // 对齐 OpenAPI: /auth/refresh-token
+		auth.POST("/login", handler.HandleLogin)
+		auth.POST("/reset-password", handler.HandleSetPassword)
+		auth.POST("/refresh-token", handler.HandleRefreshToken)
 	}
 
-	// --- 2. 聊天模块 (对齐 /chat/...) ---
+	// chat module
 	chat := r.Group("/chat")
 	chat.Use(middlewares.AuthMiddleware())
 	{
-		chat.POST("/send-message/:conversation_id", handler.HandleChatStream) // 已对齐
-		chat.GET("/history", handler.HandleGetChatHistory)                    // 对齐 OpenAPI: /chat/history
-		chat.POST("/new-conversation", handler.HandleNewChat)                // 对齐 OpenAPI: /chat/new-conversation
-		chat.PUT("/rename", handler.HandleRenameChat)                        // 对齐 OpenAPI: /chat/rename
-		chat.DELETE("/delete", handler.HandleDeleteChat)                     // 对齐 OpenAPI: /chat/delete
-		chat.GET("/quota", handler.HandleGetQuota)                           // 对齐 OpenAPI: /chat/quota
+		chat.POST("/send-message/:conversation_id", handler.HandleChatStream)
+		chat.GET("/history", handler.HandleGetChatHistory)
+		chat.POST("/new-conversation", handler.HandleNewChat)
+		chat.PUT("/rename", handler.HandleRenameChat)
+		chat.DELETE("/delete", handler.HandleDeleteChat)
+		chat.GET("/quota", handler.HandleGetQuota)
 	}
 
-	// --- 3. 语音模块 (对齐 /stt 和 /tts) ---
+	// voice module
 	voice := r.Group("")
 	voice.Use(middlewares.AuthMiddleware())
 	{
-		voice.POST("/stt/request-stt", handler.HandleSTTUpload)       // 对齐 OpenAPI: /stt/request-stt
-		voice.POST("/tts/request-tts/:message_id", handler.HandleTTSConvert) // 对齐 OpenAPI: /tts/request-tts/:message_id
+		voice.POST("/stt/request-stt", handler.HandleSTTUpload)
+		voice.POST("/tts/request-tts/:message_id", handler.HandleTTSConvert)
 	}
 
-	// --- 4. 管理员模块 (对齐 /admin/...) ---
+	// admin module
 	admin := r.Group("/admin")
 	admin.Use(middlewares.AuthMiddleware())
 	{
-		admin.POST("/user/add", handler.HandleAddUser)       // 对齐 OpenAPI: /admin/user/add
-		admin.DELETE("/user/delete", handler.HandleDeleteUser) // 对齐 OpenAPI: /admin/user/delete
-		admin.POST("/user/set-quota", handler.HandleSetQuota)  // 对齐 OpenAPI: /admin/user/set-quota
-		admin.GET("/user/list", handler.HandleGetUserList)    // 对齐 OpenAPI: /admin/user/list
+		admin.POST("/user/add", handler.HandleAddUser)
+		admin.DELETE("/user/delete", handler.HandleDeleteUser)
+		admin.POST("/user/set-quota", handler.HandleSetQuota)
+		admin.GET("/user/list", handler.HandleGetUserList)
 	}
 }

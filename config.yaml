@@ -2,6 +2,18 @@ server:
   addr: ":8080"
   debug: true
 
+db:
+  host: "server.corneliamo.cn"
+  port: 23306
+  user: "root"
+  password: "12345678"
+  name: "llm_chat"
+  params: "charset=utf8mb4&parseTime=true&loc=Local"
+
 llm:
-  base_url: "https://api.example.com/v1"
-  api_key: "YOUR_API_KEY"
+  base_url: "https://ark.cn-beijing.volces.com/api/v3"
+  api_key: "86d6977f-465b-43a6-9401-ca00d6c52b59"
+  ak: ""
+  sk: ""
+  region: "cn-beijing"
+  model: "deepseek-v3-2-251201"

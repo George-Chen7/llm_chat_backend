@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Server ServerConfig `yaml:"server"`
 	LLM    LLMConfig    `yaml:"llm"`
+	DB     DatabaseConfig `yaml:"db"`
 }
 
 type ServerConfig struct {
@@ -20,6 +21,35 @@ type ServerConfig struct {
 type LLMConfig struct {
 	BaseURL string `yaml:"base_url"`
 	APIKey  string `yaml:"api_key"`
+	AK      string `yaml:"ak"`
+	SK      string `yaml:"sk"`
+	Region  string `yaml:"region"`
+	Model   string `yaml:"model"`
+}
+
+type DatabaseConfig struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	Name     string `yaml:"name"`
+	Params   string `yaml:"params"`
+}
+
+func (d DatabaseConfig) DSN() string {
+	host := d.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := d.Port
+	if port == 0 {
+		port = 3306
+	}
+	params := d.Params
+	if params == "" {
+		params = "charset=utf8mb4&parseTime=true&loc=Local"
+	}
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?%s", d.User, d.Password, host, port, d.Name, params)
 }
 
 // Load 从给定路径读取 YAML 配置。

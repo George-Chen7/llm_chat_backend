@@ -12,7 +12,7 @@ import (
 
 func NewRouter(cfg *config.Config) *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(gin.Logger(), gin.Recovery(), middlewares.CORSMiddleware())
 	_ = cfg
 	SetupRouter(r)
 	return r
@@ -22,12 +22,13 @@ func SetupRouter(r *gin.Engine) {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	r.Static("/uploads", "./uploads")
 
 	auth := r.Group("/auth")
 	{
 		auth.POST("/login", handler.HandleLogin)
 		auth.POST("/reset-password", handler.HandleSetPassword)
-		auth.POST("/refresh-token", handler.HandleRefreshToken)
+		auth.POST("/refresh-token", middlewares.AuthMiddleware(), handler.HandleRefreshToken)
 	}
 
 	chat := r.Group("/chat")

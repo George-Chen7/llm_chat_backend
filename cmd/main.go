@@ -7,6 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"backend/internal/config"
+	"backend/internal/db"
+	"backend/internal/llm"
 	"backend/internal/router"
 )
 
@@ -25,6 +27,14 @@ func main() {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
+	}
+
+	if _, err := db.Init(cfg.DB); err != nil {
+		log.Fatalf("数据库连接失败: %v", err)
+	}
+
+	if err := llm.Init(cfg.LLM); err != nil {
+		log.Fatalf("LLM 初始化失败: %v", err)
 	}
 
 	r := router.NewRouter(cfg)

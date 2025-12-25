@@ -17,17 +17,9 @@ func HandleSTTUpload(c *gin.Context) {
 	file, header, err := c.Request.FormFile("audio")
 
 	if err != nil {
-		fmt.Printf("STT Warning: cannot get 'audio' form file, mock mode. err=%v\n", err)
-
-		mockResult := STTResult{
-			AudioText:   "mocked speech-to-text result (no file detected)",
-			AudioTokens: 0,
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"err_msg":  "success",
-			"err_code": 0,
-			"result":   mockResult,
+		c.JSON(http.StatusBadRequest, gin.H{
+			"err_msg":  "missing audio file",
+			"err_code": 400,
 		})
 		return
 	}

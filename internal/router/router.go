@@ -13,21 +13,16 @@ import (
 func NewRouter(cfg *config.Config) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
-
 	_ = cfg
-
 	SetupRouter(r)
-
 	return r
 }
 
 func SetupRouter(r *gin.Engine) {
-	// health check
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// auth module
 	auth := r.Group("/auth")
 	{
 		auth.POST("/login", handler.HandleLogin)
@@ -35,33 +30,38 @@ func SetupRouter(r *gin.Engine) {
 		auth.POST("/refresh-token", handler.HandleRefreshToken)
 	}
 
-	// chat module
 	chat := r.Group("/chat")
 	chat.Use(middlewares.AuthMiddleware())
 	{
 		chat.POST("/send-message/:conversation_id", handler.HandleChatStream)
-		chat.GET("/history", handler.HandleGetChatHistory)
+		chat.GET("/history/:conversation_id", handler.HandleGetChatHistory)
 		chat.POST("/new-conversation", handler.HandleNewChat)
-		chat.PUT("/rename", handler.HandleRenameChat)
-		chat.DELETE("/delete", handler.HandleDeleteChat)
+		chat.PUT("/rename-conversation/:conversation_id", handler.HandleRenameChat)
+		chat.DELETE("/delete-conversation/:conversation_id", handler.HandleDeleteChat)
 		chat.GET("/quota", handler.HandleGetQuota)
+		chat.POST("/upload-file", handler.HandleUploadFile)
+		chat.GET("/prompt-preset", handler.HandleGetPromptPreset)
 	}
 
-	// voice module
-	voice := r.Group("")
-	voice.Use(middlewares.AuthMiddleware())
-	{
-		voice.POST("/stt/request-stt", handler.HandleSTTUpload)
-		voice.POST("/tts/request-tts/:message_id", handler.HandleTTSConvert)
-	}
+	r.POST("/stt/request-stt", middlewares.AuthMiddleware(), handler.HandleSTTUpload)
+	r.POST("/tts/request/:message_id", middlewares.AuthMiddleware(), handler.HandleTTSConvert)
 
-	// admin module
 	admin := r.Group("/admin")
 	admin.Use(middlewares.AuthMiddleware())
 	{
-		admin.POST("/user/add", handler.HandleAddUser)
-		admin.DELETE("/user/delete", handler.HandleDeleteUser)
-		admin.POST("/user/set-quota", handler.HandleSetQuota)
-		admin.GET("/user/list", handler.HandleGetUserList)
+		admin.POST("/new-user", handler.HandleAddUser)
+		admin.GET("/users", handler.HandleGetUserList)
+		admin.DELETE("/delete-user/:user_id", handler.HandleDeleteUser)
+		admin.POST("/set-quota/:user_id", handler.HandleSetQuota)
+		admin.GET("/prompt-preset", handler.HandleAdminGetPromptPresets)
+		admin.POST("/prompt-preset", handler.HandleAdminCreatePromptPreset)
+		admin.DELETE("/prompt-preset/:prompt_preset_id", handler.HandleAdminDeletePromptPreset)
+	}
+
+	me := r.Group("/me")
+	me.Use(middlewares.AuthMiddleware())
+	{
+		me.GET("/info", handler.HandleGetMeInfo)
+		me.GET("/conversations", handler.HandleGetMeConversations)
 	}
 }

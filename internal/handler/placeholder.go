@@ -528,13 +528,17 @@ func HandleGetChatHistory(c *gin.Context) {
 
 	messages := make([]gin.H, 0, len(items))
 	for _, m := range items {
+		attachments := attachmentsMap[m.MessageID]
+		if attachments == nil {
+			attachments = []gin.H{}
+		}
 		messages = append(messages, gin.H{
 			"message_id":   m.MessageID,
 			"sender_type":  senderTypeToAPI(m.SenderType),
 			"content_type": m.ContentType,
 			"content":      m.Content,
 			"token_total":  m.TokenTotal,
-			"attachments":  attachmentsMap[m.MessageID],
+			"attachments":  attachments,
 		})
 	}
 

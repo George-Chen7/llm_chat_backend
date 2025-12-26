@@ -113,7 +113,7 @@ func DashscopeAudioASR(ctx context.Context, audioURL string) (string, int, error
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", 0, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 || result.StatusCode != 200 {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if result.Message != "" {
 			return "", 0, errors.New(result.Message)
 		}

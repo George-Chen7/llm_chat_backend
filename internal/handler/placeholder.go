@@ -11,19 +11,11 @@ import (
 
 	"backend/internal/llm"
 	"backend/internal/middlewares"
+	"backend/internal/store"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
-
-type User struct {
-	UserID         int    `json:"user_id"`
-	Username       string `json:"username"`
-	Nickname       string `json:"nickname"`
-	Role           string `json:"role"`
-	TotalQuota     int    `json:"total_quota"`
-	RemainingQuota int    `json:"remaining_quota"`
-}
 
 func HandleLogin(c *gin.Context) {
 	var req struct {
@@ -34,19 +26,8 @@ func HandleLogin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, BaseResponse{ErrMsg: "invalid params", ErrCode: 400})
 		return
 	}
-	dbx, err := getDB()
+	_, password, err := store.GetUserPassword(c.Request.Context(), req.Username)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-
-	var password string
-	row := dbx.QueryRowContext(c.Request.Context(), `
-		SELECT user_id, password
-		FROM users
-		WHERE username = ? AND status = 1
-	`, req.Username)
-	if err := row.Scan(new(int), &password); err != nil {
 		if err == sql.ErrNoRows {
 			role := "USER"
 			total := int64(0)
@@ -54,15 +35,10 @@ func HandleLogin(c *gin.Context) {
 				role = "ADMIN"
 				total = 10000
 			}
-			res, err := dbx.ExecContext(c.Request.Context(), `
-				INSERT INTO users (username, password, nickname, role, status, total_quota, remaining_quota)
-				VALUES (?, ?, ?, ?, 1, ?, ?)
-			`, req.Username, req.Password, req.Username, role, total, total)
-			if err != nil {
+			if _, err := store.CreateUser(c.Request.Context(), req.Username, req.Password, req.Username, role, total, total); err != nil {
 				c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "failed to create user", ErrCode: 500})
 				return
 			}
-			_, _ = res.LastInsertId()
 		} else {
 			c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 			return
@@ -100,45 +76,11 @@ func HandleGetUserList(c *gin.Context) {
 		pageSize = 10
 	}
 
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-
-	var totalCount int
-	if err := dbx.QueryRowContext(c.Request.Context(), `SELECT COUNT(*) FROM users`).Scan(&totalCount); err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-		return
-	}
-
-	offset := (page - 1) * pageSize
-	rows, err := dbx.QueryContext(c.Request.Context(), `
-		SELECT user_id, username, nickname, role, total_quota, remaining_quota
-		FROM users
-		ORDER BY user_id DESC
-		LIMIT ? OFFSET ?
-	`, pageSize, offset)
+	users, totalCount, err := store.ListUsers(c.Request.Context(), page, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	defer rows.Close()
-
-	users := make([]User, 0)
-	for rows.Next() {
-		var u User
-		if err := rows.Scan(&u.UserID, &u.Username, &u.Nickname, &u.Role, &u.TotalQuota, &u.RemainingQuota); err != nil {
-			c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-			return
-		}
-		users = append(users, u)
-	}
-	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-		return
-	}
-
 	totalPage := (totalCount + pageSize - 1) / pageSize
 	c.JSON(http.StatusOK, gin.H{
 		"err_msg":      "success",
@@ -164,14 +106,8 @@ func HandleAddUser(c *gin.Context) {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "invalid params", ErrCode: 400})
 		return
 	}
-	dbx, err := getDB()
+	exists, err := store.CountUsersByUsername(c.Request.Context(), req.Username)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-
-	var exists int
-	if err := dbx.QueryRowContext(c.Request.Context(), `SELECT COUNT(*) FROM users WHERE username = ?`, req.Username).Scan(&exists); err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
@@ -180,23 +116,10 @@ func HandleAddUser(c *gin.Context) {
 		return
 	}
 
-	res, err := dbx.ExecContext(c.Request.Context(), `
-		INSERT INTO users (username, password, nickname, role, status, total_quota, remaining_quota)
-		VALUES (?, ?, ?, ?, 1, ?, ?)
-	`, req.Username, req.Password, req.Nickname, req.Role, req.TotalQuota, req.RemainingQuota)
+	newUser, err := store.CreateUserWithQuota(c.Request.Context(), req.Username, req.Password, req.Nickname, req.Role, req.TotalQuota, req.RemainingQuota)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
-	}
-	newID, _ := res.LastInsertId()
-
-	newUser := User{
-		UserID:         int(newID),
-		Username:       req.Username,
-		Nickname:       req.Nickname,
-		Role:           req.Role,
-		TotalQuota:     req.TotalQuota,
-		RemainingQuota: req.RemainingQuota,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -222,21 +145,12 @@ func HandleSetQuota(c *gin.Context) {
 		return
 	}
 
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	res, err := dbx.ExecContext(c.Request.Context(), `
-		UPDATE users SET total_quota = ?, remaining_quota = ?
-		WHERE user_id = ?
-	`, req.Quota, req.Quota, userID)
+	updated, err := store.SetUserQuota(c.Request.Context(), userID, req.Quota)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
+	if !updated {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "not found", ErrCode: 404})
 		return
 	}
@@ -257,14 +171,8 @@ func HandleSetPassword(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "unauthorized", ErrCode: 401})
 		return
 	}
-	dbx, err := getDB()
+	_, current, err := store.GetUserPassword(c.Request.Context(), username)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	var current string
-	row := dbx.QueryRowContext(c.Request.Context(), `SELECT password FROM users WHERE username = ?`, username)
-	if err := row.Scan(&current); err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "user not found", ErrCode: 401})
 			return
@@ -276,7 +184,7 @@ func HandleSetPassword(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "old password incorrect", ErrCode: 401})
 		return
 	}
-	if _, err := dbx.ExecContext(c.Request.Context(), `UPDATE users SET password = ? WHERE username = ?`, req.NewPassword, username); err != nil {
+	if err := store.UpdateUserPassword(c.Request.Context(), username, req.NewPassword); err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
@@ -320,12 +228,6 @@ func HandleNewChat(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "unauthorized", ErrCode: 401})
 		return
 	}
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-
 	llmModel := "unknown"
 	if client := llm.Get(); client != nil && client.Model() != "" {
 		llmModel = client.Model()
@@ -337,20 +239,16 @@ func HandleNewChat(c *gin.Context) {
 			systemPrompt = sql.NullInt64{Int64: int64(v), Valid: true}
 		}
 	}
-	res, err := dbx.ExecContext(c.Request.Context(), `
-		INSERT INTO conversations (user_id, title, status, llm_model, system_prompt)
-		VALUES (?, ?, 'ACTIVE', ?, ?)
-	`, userID, req.Title, llmModel, systemPrompt)
+	convInfo, err := store.CreateConversation(c.Request.Context(), userID, req.Title, llmModel, systemPrompt)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	convID, _ := res.LastInsertId()
 	conv := gin.H{
-		"conversation_id": int(convID),
-		"title":           req.Title,
-		"status":          "ACTIVE",
-		"llm_model":       llmModel,
+		"conversation_id": convInfo.ConversationID,
+		"title":           convInfo.Title,
+		"status":          convInfo.Status,
+		"llm_model":       convInfo.LLMModel,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -383,21 +281,12 @@ func HandleRenameChat(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "unauthorized", ErrCode: 401})
 		return
 	}
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	res, err := dbx.ExecContext(c.Request.Context(), `
-		UPDATE conversations SET title = ?
-		WHERE conversation_id = ? AND user_id = ?
-	`, req.Title, convID, userID)
+	updated, err := store.RenameConversation(c.Request.Context(), convID, userID, req.Title)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
+	if !updated {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "not found", ErrCode: 404})
 		return
 	}
@@ -420,21 +309,12 @@ func HandleDeleteChat(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "unauthorized", ErrCode: 401})
 		return
 	}
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	res, err := dbx.ExecContext(c.Request.Context(), `
-		UPDATE conversations SET status = 'DELETED'
-		WHERE conversation_id = ? AND user_id = ?
-	`, convID, userID)
+	deleted, err := store.DeleteConversation(c.Request.Context(), convID, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
+	if !deleted {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "not found", ErrCode: 404})
 		return
 	}
@@ -466,61 +346,19 @@ func HandleGetChatHistory(c *gin.Context) {
 		pageSize = 10
 	}
 
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-
-	var totalCount int
-	if err := dbx.QueryRowContext(c.Request.Context(), `
-		SELECT COUNT(*) FROM messages m
-		JOIN conversations c ON m.conversation_id = c.conversation_id
-		WHERE c.user_id = ? AND m.conversation_id = ?
-	`, userID, convID).Scan(&totalCount); err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-		return
-	}
-
-	offset := (page - 1) * pageSize
-	rows, err := dbx.QueryContext(c.Request.Context(), `
-		SELECT m.message_id, m.sender_type, m.content_type, m.content, m.token_total
-		FROM messages m
-		JOIN conversations c ON m.conversation_id = c.conversation_id
-		WHERE c.user_id = ? AND m.conversation_id = ?
-		ORDER BY m.created_at ASC
-		LIMIT ? OFFSET ?
-	`, userID, convID, pageSize, offset)
+	totalCount, err := store.CountMessages(c.Request.Context(), userID, convID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	defer rows.Close()
 
-	messageIDs := make([]int, 0)
-	type msgRow struct {
-		MessageID   int
-		SenderType int
-		ContentType string
-		Content      string
-		TokenTotal   int
-	}
-	items := make([]msgRow, 0)
-	for rows.Next() {
-		var m msgRow
-		if err := rows.Scan(&m.MessageID, &m.SenderType, &m.ContentType, &m.Content, &m.TokenTotal); err != nil {
-			c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-			return
-		}
-		messageIDs = append(messageIDs, m.MessageID)
-		items = append(items, m)
-	}
-	if err := rows.Err(); err != nil {
+	items, messageIDs, err := store.ListMessages(c.Request.Context(), userID, convID, page, pageSize)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
 
-	attachmentsMap, err := loadAttachmentsMap(c.Request.Context(), dbx, messageIDs)
+	attachmentsMap, err := store.LoadAttachmentsMap(c.Request.Context(), messageIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
@@ -528,9 +366,15 @@ func HandleGetChatHistory(c *gin.Context) {
 
 	messages := make([]gin.H, 0, len(items))
 	for _, m := range items {
-		attachments := attachmentsMap[m.MessageID]
-		if attachments == nil {
-			attachments = []gin.H{}
+		attachments := make([]gin.H, 0)
+		for _, a := range attachmentsMap[m.MessageID] {
+			attachments = append(attachments, gin.H{
+				"attachment_id":   a.AttachmentID,
+				"attachment_type": a.AttachmentType,
+				"mime_type":       a.MimeType,
+				"url_or_path":     a.URLOrPath,
+				"duration_ms":     a.DurationMS,
+			})
 		}
 		messages = append(messages, gin.H{
 			"message_id":   m.MessageID,
@@ -561,36 +405,16 @@ func HandleDeleteUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, BaseResponse{ErrMsg: "invalid user_id", ErrCode: 400})
 		return
 	}
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	res, err := dbx.ExecContext(c.Request.Context(), `DELETE FROM users WHERE user_id = ?`, userID)
+	deleted, err := store.DeleteUser(c.Request.Context(), userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
+	if !deleted {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "not found", ErrCode: 404})
 		return
 	}
 	c.JSON(http.StatusOK, BaseResponse{ErrMsg: "success", ErrCode: 0})
-}
-
-type PromptPreset struct {
-	PromptPresetID int    `json:"prompt_preset_id"`
-	Name           string `json:"name"`
-	Description    string `json:"description"`
-	Content        string `json:"content"`
-}
-
-type ConversationInfo struct {
-	ConversationID int    `json:"conversation_id"`
-	Title          string `json:"title"`
-	Status         string `json:"status"`
-	LLMModel       string `json:"llm_model"`
 }
 
 func HandleUploadFile(c *gin.Context) {
@@ -606,22 +430,16 @@ func HandleUploadFile(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "unauthorized", ErrCode: 401})
 		return
 	}
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-
 	llmModel := "unknown"
 	if client := llm.Get(); client != nil && client.Model() != "" {
 		llmModel = client.Model()
 	}
-	uploadConvID, err := getOrCreateUploadConversation(c.Request.Context(), userID, llmModel)
+	uploadConvID, err := store.GetOrCreateUploadConversation(c.Request.Context(), userID, llmModel)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	uploadMsgID, err := createUploadMessage(c.Request.Context(), uploadConvID)
+	uploadMsgID, err := store.CreateUploadMessage(c.Request.Context(), uploadConvID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
@@ -646,6 +464,7 @@ func HandleUploadFile(c *gin.Context) {
 	}
 	storeName := strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + filename
 	storePath := filepath.Join("uploads", storeName)
+	publicPath := "/uploads/" + storeName
 	out, err := os.Create(storePath)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "failed to save file", ErrCode: 500})
@@ -657,15 +476,11 @@ func HandleUploadFile(c *gin.Context) {
 		return
 	}
 
-	res, err := dbx.ExecContext(c.Request.Context(), `
-		INSERT INTO message_attachments (message_id, attachment_type, mime_type, storage_type, url_or_path, duration_ms)
-		VALUES (?, 'FILE', ?, 'LOCAL', ?, NULL)
-	`, uploadMsgID, mimeType, storePath)
+	attachID, err := store.CreateAttachment(c.Request.Context(), uploadMsgID, "FILE", mimeType, "LOCAL", publicPath, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	attachID, _ := res.LastInsertId()
 
 	c.JSON(http.StatusOK, gin.H{
 		"err_msg":  "success",
@@ -674,46 +489,26 @@ func HandleUploadFile(c *gin.Context) {
 			"attachment_id":   int(attachID),
 			"attachment_type": "FILE",
 			"mime_type":       mimeType,
-			"url_or_path":     storePath,
+			"url_or_path":     publicPath,
 			"created_at":      time.Now().Format(time.RFC3339),
 		},
 	})
 }
 
 func HandleGetPromptPreset(c *gin.Context) {
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	rows, err := dbx.QueryContext(c.Request.Context(), `
-		SELECT prompt_preset_id, name, description, content
-		FROM prompt_presets
-		ORDER BY prompt_preset_id DESC
-	`)
+	presets, err := store.ListPromptPresets(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	defer rows.Close()
-
-	list := make([]gin.H, 0)
-	for rows.Next() {
-		var p PromptPreset
-		if err := rows.Scan(&p.PromptPresetID, &p.Name, &p.Description, &p.Content); err != nil {
-			c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-			return
-		}
+	list := make([]gin.H, 0, len(presets))
+	for _, p := range presets {
 		list = append(list, gin.H{
 			"prompt_preset_id": p.PromptPresetID,
 			"name":             p.Name,
 			"description":      p.Description,
 			"content":          p.Content,
 		})
-	}
-	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -729,7 +524,7 @@ func HandleGetMeInfo(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "unauthorized", ErrCode: 401})
 		return
 	}
-	user, err := getUserByUsername(c.Request.Context(), username)
+	user, err := store.GetUserByUsername(c.Request.Context(), username)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "user not found", ErrCode: 401})
@@ -759,33 +554,8 @@ func HandleGetMeConversations(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "unauthorized", ErrCode: 401})
 		return
 	}
-	dbx, err := getDB()
+	conversations, err := store.ListConversationsByUser(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	rows, err := dbx.QueryContext(c.Request.Context(), `
-		SELECT conversation_id, title, status, llm_model
-		FROM conversations
-		WHERE user_id = ?
-		ORDER BY conversation_id DESC
-	`, userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-		return
-	}
-	defer rows.Close()
-
-	conversations := make([]ConversationInfo, 0)
-	for rows.Next() {
-		var info ConversationInfo
-		if err := rows.Scan(&info.ConversationID, &info.Title, &info.Status, &info.LLMModel); err != nil {
-			c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-			return
-		}
-		conversations = append(conversations, info)
-	}
-	if err := rows.Err(); err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
@@ -798,36 +568,11 @@ func HandleGetMeConversations(c *gin.Context) {
 }
 
 func HandleAdminGetPromptPresets(c *gin.Context) {
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	rows, err := dbx.QueryContext(c.Request.Context(), `
-		SELECT prompt_preset_id, name, description, content
-		FROM prompt_presets
-		ORDER BY prompt_preset_id DESC
-	`)
+	list, err := store.ListPromptPresets(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	defer rows.Close()
-
-	list := make([]PromptPreset, 0)
-	for rows.Next() {
-		var p PromptPreset
-		if err := rows.Scan(&p.PromptPresetID, &p.Name, &p.Description, &p.Content); err != nil {
-			c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-			return
-		}
-		list = append(list, p)
-	}
-	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
-		return
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"err_msg":        "success",
 		"err_code":       0,
@@ -845,16 +590,7 @@ func HandleAdminCreatePromptPreset(c *gin.Context) {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "invalid params", ErrCode: 400})
 		return
 	}
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	_, err = dbx.ExecContext(c.Request.Context(), `
-		INSERT INTO prompt_presets (name, description, content)
-		VALUES (?, ?, ?)
-	`, req.Name, req.Description, req.Content)
-	if err != nil {
+	if err := store.CreatePromptPreset(c.Request.Context(), req.Name, req.Description, req.Content); err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
@@ -868,18 +604,12 @@ func HandleAdminDeletePromptPreset(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, BaseResponse{ErrMsg: "invalid prompt_preset_id", ErrCode: 400})
 		return
 	}
-	dbx, err := getDB()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db not initialized", ErrCode: 500})
-		return
-	}
-	res, err := dbx.ExecContext(c.Request.Context(), `DELETE FROM prompt_presets WHERE prompt_preset_id = ?`, id)
+	deleted, err := store.DeletePromptPreset(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}
-	affected, _ := res.RowsAffected()
-	if affected == 0 {
+	if !deleted {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "not found", ErrCode: 404})
 		return
 	}

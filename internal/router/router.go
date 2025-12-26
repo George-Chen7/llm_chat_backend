@@ -6,8 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"backend/internal/config"
-	"backend/internal/handler"
 	"backend/internal/middlewares"
+	"backend/internal/controller"
 )
 
 func NewRouter(cfg *config.Config) *gin.Engine {
@@ -26,42 +26,42 @@ func SetupRouter(r *gin.Engine) {
 
 	auth := r.Group("/auth")
 	{
-		auth.POST("/login", handler.HandleLogin)
-		auth.POST("/reset-password", handler.HandleSetPassword)
-		auth.POST("/refresh-token", middlewares.AuthMiddleware(), handler.HandleRefreshToken)
+		auth.POST("/login", controller.HandleLogin)
+		auth.POST("/reset-password", controller.HandleSetPassword)
+		auth.POST("/refresh-token", middlewares.AuthMiddleware(), controller.HandleRefreshToken)
 	}
 
 	chat := r.Group("/chat")
 	chat.Use(middlewares.AuthMiddleware())
 	{
-		chat.POST("/send-message/:conversation_id", handler.HandleChatStream)
-		chat.GET("/history/:conversation_id", handler.HandleGetChatHistory)
-		chat.POST("/new-conversation", handler.HandleNewChat)
-		chat.PUT("/rename-conversation/:conversation_id", handler.HandleRenameChat)
-		chat.DELETE("/delete-conversation/:conversation_id", handler.HandleDeleteChat)
-		chat.POST("/upload-file", handler.HandleUploadFile)
-		chat.GET("/prompt-preset", handler.HandleGetPromptPreset)
+		chat.POST("/send-message/:conversation_id", controller.HandleChatSend)
+		chat.GET("/history/:conversation_id", controller.HandleGetChatHistory)
+		chat.POST("/new-conversation", controller.HandleNewChat)
+		chat.PUT("/rename-conversation/:conversation_id", controller.HandleRenameChat)
+		chat.DELETE("/delete-conversation/:conversation_id", controller.HandleDeleteChat)
+		chat.POST("/upload-file", controller.HandleUploadFile)
+		chat.GET("/prompt-preset", controller.HandleGetPromptPreset)
 	}
 
-	r.POST("/stt/request-stt", middlewares.AuthMiddleware(), handler.HandleSTTUpload)
-	r.POST("/tts/request/:message_id", middlewares.AuthMiddleware(), handler.HandleTTSConvert)
+	r.POST("/stt/request-stt", middlewares.AuthMiddleware(), controller.HandleSTTUpload)
+	r.POST("/tts/request/:message_id", middlewares.AuthMiddleware(), controller.HandleTTSConvert)
 
 	admin := r.Group("/admin")
 	admin.Use(middlewares.AuthMiddleware())
 	{
-		admin.POST("/new-user", handler.HandleAddUser)
-		admin.GET("/users", handler.HandleGetUserList)
-		admin.DELETE("/delete-user/:user_id", handler.HandleDeleteUser)
-		admin.POST("/set-quota/:user_id", handler.HandleSetQuota)
-		admin.GET("/prompt-preset", handler.HandleAdminGetPromptPresets)
-		admin.POST("/prompt-preset", handler.HandleAdminCreatePromptPreset)
-		admin.DELETE("/prompt-preset/:prompt_preset_id", handler.HandleAdminDeletePromptPreset)
+		admin.POST("/new-user", controller.HandleAddUser)
+		admin.GET("/users", controller.HandleGetUserList)
+		admin.DELETE("/delete-user/:user_id", controller.HandleDeleteUser)
+		admin.POST("/set-quota/:user_id", controller.HandleSetQuota)
+		admin.GET("/prompt-preset", controller.HandleAdminGetPromptPresets)
+		admin.POST("/prompt-preset", controller.HandleAdminCreatePromptPreset)
+		admin.DELETE("/prompt-preset/:prompt_preset_id", controller.HandleAdminDeletePromptPreset)
 	}
 
 	me := r.Group("/me")
 	me.Use(middlewares.AuthMiddleware())
 	{
-		me.GET("/info", handler.HandleGetMeInfo)
-		me.GET("/conversations", handler.HandleGetMeConversations)
+		me.GET("/info", controller.HandleGetMeInfo)
+		me.GET("/conversations", controller.HandleGetMeConversations)
 	}
 }

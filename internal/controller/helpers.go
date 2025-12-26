@@ -1,4 +1,4 @@
-package handler
+package controller
 
 import (
 	"errors"
@@ -43,19 +43,5 @@ func senderTypeToAPI(i int) string {
 		return "SYSTEM"
 	default:
 		return "USER"
-	}
-}
-
-// senderTypeToDB 转换为数据库字段值。
-func senderTypeToDB(s string) int {
-	switch s {
-	case "USER":
-		return store.SenderUser
-	case "ASSISTANT":
-		return store.SenderAssistant
-	case "SYSTEM":
-		return store.SenderSystem
-	default:
-		return store.SenderUser
 	}
 }

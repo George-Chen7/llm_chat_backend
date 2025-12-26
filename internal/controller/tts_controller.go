@@ -1,37 +1,35 @@
-package handler
+package controller
 
 import (
-	"crypto/rand"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"backend/internal/service"
+
 	"github.com/gin-gonic/gin"
 )
 
-type TTSRequest struct {
-	Text string `json:"text"`
-}
-
+// HandleTTSConvert 文本转语音（占位）。
 func HandleTTSConvert(c *gin.Context) {
 	messageID := c.Param("message_id")
 	if strings.TrimSpace(messageID) == "" {
 		c.JSON(http.StatusBadRequest, BaseResponse{ErrMsg: "missing message_id", ErrCode: 400})
 		return
 	}
-	var req TTSRequest
+	var req struct {
+		Text string `json:"text"`
+	}
 	_ = c.ShouldBindJSON(&req)
-	fmt.Printf("TTS request received: message_id=%s, text=%s\n", messageID, req.Text)
 
-	audio := make([]byte, 512)
-	if _, err := rand.Read(audio); err != nil {
+	audio, err := service.TextToSpeech(c.Request.Context(), req.Text)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "failed to generate audio data", ErrCode: 500})
 		return
 	}
 
 	c.Header("Content-Type", "audio/wav")
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="tts_%s.wav"`, messageID))
+	c.Header("Content-Disposition", `attachment; filename="tts_`+messageID+`.wav"`)
 	c.Header("Content-Length", strconv.Itoa(len(audio)))
 
 	c.Writer.WriteHeader(http.StatusOK)

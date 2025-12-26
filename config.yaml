@@ -27,3 +27,9 @@ oss:
   security_token: ""
   prefix: "uploads"
   temp_url_expire_seconds: 900
+
+admin:
+  username: "admin"
+  password: "admin123"
+  nickname: "Admin"
+  total_quota: 10000

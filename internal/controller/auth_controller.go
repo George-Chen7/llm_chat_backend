@@ -26,6 +26,10 @@ func HandleLogin(c *gin.Context) {
 			c.JSON(http.StatusUnauthorized, BaseResponse{ErrMsg: "invalid credentials", ErrCode: 401})
 			return
 		}
+		if err == service.ErrUserNotFound || err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, BaseResponse{ErrMsg: "user not found", ErrCode: 404})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return
 	}

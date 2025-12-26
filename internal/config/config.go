@@ -12,6 +12,7 @@ type Config struct {
 	LLM    LLMConfig      `yaml:"llm"`
 	DB     DatabaseConfig `yaml:"db"`
 	OSS    OSSConfig      `yaml:"oss"`
+	Admin  AdminConfig    `yaml:"admin"`
 }
 
 type ServerConfig struct {
@@ -50,6 +51,13 @@ type OSSConfig struct {
 
 func (o OSSConfig) Enabled() bool {
 	return o.Bucket != "" && o.AccessKeyID != "" && o.AccessKeySecret != ""
+}
+
+type AdminConfig struct {
+	Username   string `yaml:"username"`
+	Password   string `yaml:"password"`
+	Nickname   string `yaml:"nickname"`
+	TotalQuota int64  `yaml:"total_quota"`
 }
 
 func (d DatabaseConfig) DSN() string {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -32,6 +33,10 @@ func main() {
 
 	if _, err := db.Init(cfg.DB); err != nil {
 		log.Fatalf("数据库连接失败: %v", err)
+	}
+
+	if err := service.EnsureAdmin(context.Background(), cfg.Admin); err != nil {
+		log.Fatalf("admin init failed: %v", err)
 	}
 
 	if err := llm.Init(cfg.LLM); err != nil {

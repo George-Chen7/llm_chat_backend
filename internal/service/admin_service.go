@@ -13,7 +13,11 @@ func ListUsers(ctx context.Context, page, pageSize int) ([]store.User, int, erro
 
 // CreateUser 创建用户并返回对象。
 func CreateUser(ctx context.Context, username, password, nickname, role string, total, remaining int) (store.User, error) {
-	return store.CreateUserWithQuota(ctx, username, password, nickname, role, total, remaining)
+	hashed, err := hashPassword(password)
+	if err != nil {
+		return store.User{}, err
+	}
+	return store.CreateUserWithQuota(ctx, username, hashed, nickname, role, total, remaining)
 }
 
 // SetUserQuota 设置用户额度。

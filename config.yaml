@@ -17,3 +17,13 @@ llm:
   sk: ""
   region: "cn-beijing"
   model: "deepseek-v3-2-251201"
+
+oss:
+  endpoint: "oss-cn-hangzhou.aliyuncs.com"
+  region: "cn-hangzhou"
+  bucket: ""
+  access_key_id: ""
+  access_key_secret: ""
+  security_token: ""
+  prefix: "uploads"
+  temp_url_expire_seconds: 900

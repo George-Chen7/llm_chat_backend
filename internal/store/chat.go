@@ -135,6 +135,40 @@ func ListMessages(ctx context.Context, userID, conversationID, page, pageSize in
 	return items, ids, nil
 }
 
+// ListAllMessages 获取会话全部消息（按时间升序）。
+func ListAllMessages(ctx context.Context, userID, conversationID int) ([]MessageRow, []int, error) {
+	dbx, err := GetDB()
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := dbx.QueryContext(ctx, `
+		SELECT m.message_id, m.sender_type, m.content_type, m.content, m.token_total
+		FROM messages m
+		JOIN conversations c ON m.conversation_id = c.conversation_id
+		WHERE c.user_id = ? AND m.conversation_id = ?
+		ORDER BY m.created_at ASC
+	`, userID, conversationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	items := make([]MessageRow, 0)
+	ids := make([]int, 0)
+	for rows.Next() {
+		var m MessageRow
+		if err := rows.Scan(&m.MessageID, &m.SenderType, &m.ContentType, &m.Content, &m.TokenTotal); err != nil {
+			return nil, nil, err
+		}
+		items = append(items, m)
+		ids = append(ids, m.MessageID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	return items, ids, nil
+}
+
 // InsertMessage 创建消息并返回 ID。
 func InsertMessage(ctx context.Context, conversationID int, senderType int, contentType, content string, tokenTotal int) (int, error) {
 	dbx, err := GetDB()
@@ -186,7 +220,7 @@ func LoadAttachmentsMap(ctx context.Context, messageIDs []int) (map[int][]Attach
 		return map[int][]AttachmentInfo{}, nil
 	}
 	rows, err := dbx.QueryContext(ctx, `
-		SELECT attachment_id, message_id, attachment_type, mime_type, url_or_path, duration_ms
+		SELECT attachment_id, message_id, attachment_type, mime_type, storage_type, url_or_path, duration_ms
 		FROM message_attachments
 		WHERE message_id IN `+inClause, args...)
 	if err != nil {
@@ -201,16 +235,18 @@ func LoadAttachmentsMap(ctx context.Context, messageIDs []int) (map[int][]Attach
 			messageID    int
 			atype        string
 			mimeType     string
+			storageType  string
 			urlOrPath    string
 			duration     sql.NullFloat64
 		)
-		if err := rows.Scan(&attachmentID, &messageID, &atype, &mimeType, &urlOrPath, &duration); err != nil {
+		if err := rows.Scan(&attachmentID, &messageID, &atype, &mimeType, &storageType, &urlOrPath, &duration); err != nil {
 			return nil, err
 		}
 		item := AttachmentInfo{
 			AttachmentID:   attachmentID,
 			AttachmentType: atype,
 			MimeType:       mimeType,
+			StorageType:    storageType,
 			URLOrPath:      urlOrPath,
 		}
 		if duration.Valid {
@@ -223,4 +259,58 @@ func LoadAttachmentsMap(ctx context.Context, messageIDs []int) (map[int][]Attach
 		return nil, err
 	}
 	return out, nil
+}
+
+// LoadAttachmentsByIDs loads attachments by IDs with user ownership check.
+func LoadAttachmentsByIDs(ctx context.Context, userID int, attachmentIDs []int) ([]AttachmentInfo, error) {
+	dbx, err := GetDB()
+	if err != nil {
+		return nil, err
+	}
+	inClause, args := BuildInClause(attachmentIDs)
+	if inClause == "" {
+		return []AttachmentInfo{}, nil
+	}
+	args = append([]any{userID}, args...)
+	rows, err := dbx.QueryContext(ctx, `
+		SELECT ma.attachment_id, ma.attachment_type, ma.mime_type, ma.storage_type, ma.url_or_path, ma.duration_ms
+		FROM message_attachments ma
+		JOIN messages m ON ma.message_id = m.message_id
+		JOIN conversations c ON m.conversation_id = c.conversation_id
+		WHERE c.user_id = ? AND ma.attachment_id IN `+inClause, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]AttachmentInfo, 0)
+	for rows.Next() {
+		var (
+			attachmentID int
+			atype        string
+			mimeType     string
+			storageType  string
+			urlOrPath    string
+			duration     sql.NullFloat64
+		)
+		if err := rows.Scan(&attachmentID, &atype, &mimeType, &storageType, &urlOrPath, &duration); err != nil {
+			return nil, err
+		}
+		item := AttachmentInfo{
+			AttachmentID:   attachmentID,
+			AttachmentType: atype,
+			MimeType:       mimeType,
+			StorageType:    storageType,
+			URLOrPath:      urlOrPath,
+		}
+		if duration.Valid {
+			val := duration.Float64
+			item.DurationMS = &val
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

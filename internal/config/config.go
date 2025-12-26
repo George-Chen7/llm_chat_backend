@@ -8,9 +8,10 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig `yaml:"server"`
-	LLM    LLMConfig    `yaml:"llm"`
+	Server ServerConfig   `yaml:"server"`
+	LLM    LLMConfig      `yaml:"llm"`
 	DB     DatabaseConfig `yaml:"db"`
+	OSS    OSSConfig      `yaml:"oss"`
 }
 
 type ServerConfig struct {
@@ -34,6 +35,21 @@ type DatabaseConfig struct {
 	Password string `yaml:"password"`
 	Name     string `yaml:"name"`
 	Params   string `yaml:"params"`
+}
+
+type OSSConfig struct {
+	Endpoint             string `yaml:"endpoint"`
+	Region               string `yaml:"region"`
+	Bucket               string `yaml:"bucket"`
+	AccessKeyID          string `yaml:"access_key_id"`
+	AccessKeySecret      string `yaml:"access_key_secret"`
+	SecurityToken        string `yaml:"security_token"`
+	Prefix               string `yaml:"prefix"`
+	TempURLExpireSeconds int    `yaml:"temp_url_expire_seconds"`
+}
+
+func (o OSSConfig) Enabled() bool {
+	return o.Bucket != "" && o.AccessKeyID != "" && o.AccessKeySecret != ""
 }
 
 func (d DatabaseConfig) DSN() string {

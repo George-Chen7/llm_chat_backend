@@ -58,27 +58,20 @@ func (c *Client) Model() string {
 	return c.model
 }
 
-func (c *Client) ChatCompletion(ctx context.Context, content string) (string, error) {
+func (c *Client) ChatCompletion(ctx context.Context, messages []*arkmodel.ChatCompletionMessage) (string, arkmodel.Usage, error) {
 	req := arkmodel.ChatCompletionRequest{
-		Model: c.model,
-		Messages: []*arkmodel.ChatCompletionMessage{
-			{
-				Role: arkmodel.ChatMessageRoleUser,
-				Content: &arkmodel.ChatCompletionMessageContent{
-					StringValue: &content,
-				},
-			},
-		},
+		Model:    c.model,
+		Messages: messages,
 	}
 
 	resp, err := c.ark.CreateChatCompletion(ctx, req)
 	if err != nil {
-		return "", err
+		return "", arkmodel.Usage{}, err
 	}
 	if len(resp.Choices) == 0 || resp.Choices[0] == nil {
-		return "", errors.New("empty llm response")
+		return "", arkmodel.Usage{}, errors.New("empty llm response")
 	}
-	return extractContent(resp.Choices[0].Message.Content), nil
+	return extractContent(resp.Choices[0].Message.Content), resp.Usage, nil
 }
 
 func extractContent(content *arkmodel.ChatCompletionMessageContent) string {

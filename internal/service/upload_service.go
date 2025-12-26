@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"backend/internal/llm"
@@ -18,6 +21,7 @@ type UploadFileResult struct {
 	AttachmentID int
 	MimeType     string
 	URLOrPath    string
+	StorageType  string
 }
 
 // SaveLocalFile 保存本地文件并返回公开路径。
@@ -64,15 +68,36 @@ func UploadAndRecord(ctx context.Context, userID int, filename, mimeType string,
 		return UploadFileResult{}, err
 	}
 
-	_, publicPath, err := SaveLocalFile(reader, filename)
-	if err != nil {
-		return UploadFileResult{}, err
-	}
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
 
-	attachID, err := store.CreateAttachment(ctx, uploadMsgID, "FILE", mimeType, "LOCAL", publicPath, nil)
+	storageType := store.StorageTypeLocal
+	urlOrPath := ""
+	publicURL := ""
+
+	if ossConfig.Enabled() {
+		objectKey := buildOSSObjectKey(filename)
+		if err := PutObjectToOSS(ctx, objectKey, reader, mimeType); err != nil {
+			return UploadFileResult{}, err
+		}
+		storageType = store.StorageTypeOSS
+		urlOrPath = objectKey
+		signedURL, err := PresignGetURL(ctx, objectKey, 0)
+		if err != nil {
+			return UploadFileResult{}, err
+		}
+		publicURL = signedURL
+	} else {
+		_, publicPath, err := SaveLocalFile(reader, filename)
+		if err != nil {
+			return UploadFileResult{}, err
+		}
+		urlOrPath = publicPath
+		publicURL = publicPath
+	}
+
+	attachID, err := store.CreateAttachment(ctx, uploadMsgID, "FILE", mimeType, storageType, urlOrPath, nil)
 	if err != nil {
 		return UploadFileResult{}, err
 	}
@@ -80,6 +105,28 @@ func UploadAndRecord(ctx context.Context, userID int, filename, mimeType string,
 	return UploadFileResult{
 		AttachmentID: attachID,
 		MimeType:     mimeType,
-		URLOrPath:    publicPath,
+		URLOrPath:    publicURL,
+		StorageType:  storageType,
 	}, nil
+}
+
+func buildOSSObjectKey(filename string) string {
+	name := "upload.bin"
+	if strings.TrimSpace(filename) != "" {
+		name = filepath.Base(filename)
+	}
+	objectName := fmt.Sprintf("%d_%s", time.Now().UnixNano(), name)
+	prefix := strings.Trim(ossConfig.Prefix, "/")
+	if prefix == "" {
+		return objectName
+	}
+	return path.Join(prefix, objectName)
+}
+
+// ResolveAttachmentURL returns a response-ready URL for attachments.
+func ResolveAttachmentURL(ctx context.Context, attachment store.AttachmentInfo) (string, error) {
+	if strings.EqualFold(attachment.StorageType, store.StorageTypeOSS) {
+		return PresignGetURL(ctx, attachment.URLOrPath, 0)
+	}
+	return attachment.URLOrPath, nil
 }

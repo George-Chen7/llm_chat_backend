@@ -82,3 +82,34 @@ func CountUsersByUsername(ctx context.Context, username string) (int, error) {
 	}
 	return count, nil
 }
+
+// GetUserRemainingQuota 获取用户剩余额度。
+func GetUserRemainingQuota(ctx context.Context, userID int) (int, error) {
+	dbx, err := GetDB()
+	if err != nil {
+		return 0, err
+	}
+	var remaining int
+	if err := dbx.QueryRowContext(ctx, `
+		SELECT remaining_quota
+		FROM users
+		WHERE user_id = ? AND status = 1
+	`, userID).Scan(&remaining); err != nil {
+		return 0, err
+	}
+	return remaining, nil
+}
+
+// DecreaseUserQuota 扣减用户额度（允许为负）。
+func DecreaseUserQuota(ctx context.Context, userID int, delta int) error {
+	dbx, err := GetDB()
+	if err != nil {
+		return err
+	}
+	_, err = dbx.ExecContext(ctx, `
+		UPDATE users
+		SET remaining_quota = remaining_quota - ?
+		WHERE user_id = ?
+	`, delta, userID)
+	return err
+}

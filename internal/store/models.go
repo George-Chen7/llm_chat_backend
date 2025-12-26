@@ -40,6 +40,7 @@ type AttachmentInfo struct {
 	AttachmentID   int      `json:"attachment_id"`
 	AttachmentType string   `json:"attachment_type"`
 	MimeType       string   `json:"mime_type"`
+	StorageType    string   `json:"storage_type"`
 	URLOrPath      string   `json:"url_or_path"`
 	DurationMS     *float64 `json:"duration_ms,omitempty"`
 }

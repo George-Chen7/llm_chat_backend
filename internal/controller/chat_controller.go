@@ -58,6 +58,8 @@ func HandleChatSend(c *gin.Context) {
 			c.JSON(http.StatusNotFound, BaseResponse{ErrMsg: "conversation not found", ErrCode: 404})
 		case service.ErrLLMNotReady:
 			c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "llm client not initialized", ErrCode: 500})
+		case service.ErrQuotaExceeded:
+			c.JSON(http.StatusForbidden, BaseResponse{ErrMsg: "quota exhausted", ErrCode: 403})
 		default:
 			c.JSON(http.StatusBadGateway, BaseResponse{ErrMsg: err.Error(), ErrCode: 502})
 		}
@@ -66,11 +68,16 @@ func HandleChatSend(c *gin.Context) {
 
 	attachList := make([]gin.H, 0, len(attachments))
 	for _, a := range attachments {
+		urlOrPath, err := service.ResolveAttachmentURL(c.Request.Context(), a)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "attachment url error", ErrCode: 500})
+			return
+		}
 		attachList = append(attachList, gin.H{
 			"attachment_id":   a.AttachmentID,
 			"attachment_type": a.AttachmentType,
 			"mime_type":       a.MimeType,
-			"url_or_path":     a.URLOrPath,
+			"url_or_path":     urlOrPath,
 			"duration_ms":     a.DurationMS,
 		})
 	}
@@ -247,11 +254,16 @@ func HandleGetChatHistory(c *gin.Context) {
 	for _, m := range items {
 		attachments := make([]gin.H, 0)
 		for _, a := range attachmentsMap[m.MessageID] {
+			urlOrPath, err := service.ResolveAttachmentURL(c.Request.Context(), a)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "attachment url error", ErrCode: 500})
+				return
+			}
 			attachments = append(attachments, gin.H{
 				"attachment_id":   a.AttachmentID,
 				"attachment_type": a.AttachmentType,
 				"mime_type":       a.MimeType,
-				"url_or_path":     a.URLOrPath,
+				"url_or_path":     urlOrPath,
 				"duration_ms":     a.DurationMS,
 			})
 		}

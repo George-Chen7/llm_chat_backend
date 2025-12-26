@@ -6,3 +6,9 @@ const (
 	SenderAssistant = 2
 	SenderSystem    = 3
 )
+
+// 附件存储类型（与数据库保持一致）。
+const (
+	StorageTypeLocal = "LOCAL"
+	StorageTypeOSS   = "OSS"
+)

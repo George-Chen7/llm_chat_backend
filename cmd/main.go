@@ -10,6 +10,7 @@ import (
 	"backend/internal/db"
 	"backend/internal/llm"
 	"backend/internal/router"
+	"backend/internal/service"
 )
 
 func main() {
@@ -35,6 +36,10 @@ func main() {
 
 	if err := llm.Init(cfg.LLM); err != nil {
 		log.Fatalf("LLM 初始化失败: %v", err)
+	}
+
+	if err := service.InitOSS(cfg.OSS); err != nil {
+		log.Fatalf("OSS init failed: %v", err)
 	}
 
 	r := router.NewRouter(cfg)

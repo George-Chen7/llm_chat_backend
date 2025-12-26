@@ -4,9 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 
 	"backend/internal/llm"
 	"backend/internal/store"
+
+	arkmodel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 var (
@@ -14,6 +17,8 @@ var (
 	ErrConversationNotFound = errors.New("conversation not found")
 	// ErrLLMNotReady 模型服务不可用。
 	ErrLLMNotReady = errors.New("llm not initialized")
+	// ErrQuotaExceeded ?????
+	ErrQuotaExceeded = errors.New("quota exceeded")
 )
 
 // SendMessage 发送消息并写入用户消息与模型回复。
@@ -29,9 +34,42 @@ func SendMessage(ctx context.Context, userID, conversationID int, contentType, c
 	if client == nil {
 		return 0, 0, nil, "", ErrLLMNotReady
 	}
-	reply, err := client.ChatCompletion(ctx, content)
+
+	remaining, err := store.GetUserRemainingQuota(ctx, userID)
 	if err != nil {
 		return 0, 0, nil, "", err
+	}
+	if remaining <= 0 {
+		return 0, 0, nil, "", ErrQuotaExceeded
+	}
+	attachmentsForLLM, err := store.LoadAttachmentsByIDs(ctx, userID, attachmentIDs)
+	if err != nil {
+		return 0, 0, nil, "", err
+	}
+	historyItems, historyIDs, err := store.ListAllMessages(ctx, userID, conversationID)
+	if err != nil {
+		return 0, 0, nil, "", err
+	}
+	historyAttachments, err := store.LoadAttachmentsMap(ctx, historyIDs)
+	if err != nil {
+		return 0, 0, nil, "", err
+	}
+	messages, err := buildLLMMessages(ctx, historyItems, historyAttachments, content, attachmentsForLLM)
+	if err != nil {
+		return 0, 0, nil, "", err
+	}
+	reply, usage, err := client.ChatCompletion(ctx, messages)
+	if err != nil {
+		return 0, 0, nil, "", err
+	}
+	totalTokens := usage.TotalTokens
+	if totalTokens == 0 {
+		totalTokens = usage.PromptTokens + usage.CompletionTokens
+	}
+	if totalTokens > 0 {
+		if err := store.DecreaseUserQuota(ctx, userID, totalTokens); err != nil {
+			return 0, 0, nil, "", err
+		}
 	}
 
 	userMsgID, err := store.InsertMessage(ctx, conversationID, store.SenderUser, contentType, content, len(content))
@@ -58,6 +96,115 @@ func SendMessage(ctx context.Context, userID, conversationID int, contentType, c
 	}
 
 	return userMsgID, modelMsgID, attachments, reply, nil
+}
+
+func buildLLMMessages(
+	ctx context.Context,
+	history []store.MessageRow,
+	historyAttachments map[int][]store.AttachmentInfo,
+	content string,
+	currentAttachments []store.AttachmentInfo,
+) ([]*arkmodel.ChatCompletionMessage, error) {
+	messages := make([]*arkmodel.ChatCompletionMessage, 0, len(history)+1)
+
+	for _, msg := range history {
+		role := senderTypeToRole(msg.SenderType)
+		attachments := historyAttachments[msg.MessageID]
+		if len(attachments) == 0 {
+			text := msg.Content
+			messages = append(messages, &arkmodel.ChatCompletionMessage{
+				Role: role,
+				Content: &arkmodel.ChatCompletionMessageContent{
+					StringValue: &text,
+				},
+			})
+			continue
+		}
+
+		parts, err := buildContentParts(ctx, msg.Content, attachments)
+		if err != nil {
+			return nil, err
+		}
+		messages = append(messages, &arkmodel.ChatCompletionMessage{
+			Role: role,
+			Content: &arkmodel.ChatCompletionMessageContent{
+				ListValue: parts,
+			},
+		})
+	}
+
+	if len(currentAttachments) == 0 {
+		messages = append(messages, &arkmodel.ChatCompletionMessage{
+			Role: arkmodel.ChatMessageRoleUser,
+			Content: &arkmodel.ChatCompletionMessageContent{
+				StringValue: &content,
+			},
+		})
+		return messages, nil
+	}
+
+	parts, err := buildContentParts(ctx, content, currentAttachments)
+	if err != nil {
+		return nil, err
+	}
+	messages = append(messages, &arkmodel.ChatCompletionMessage{
+		Role: arkmodel.ChatMessageRoleUser,
+		Content: &arkmodel.ChatCompletionMessageContent{
+			ListValue: parts,
+		},
+	})
+	return messages, nil
+}
+
+func buildContentParts(ctx context.Context, text string, attachments []store.AttachmentInfo) ([]*arkmodel.ChatCompletionMessageContentPart, error) {
+	parts := make([]*arkmodel.ChatCompletionMessageContentPart, 0, len(attachments)+1)
+	for _, attachment := range attachments {
+		url, err := ResolveAttachmentURL(ctx, attachment)
+		if err != nil {
+			return nil, err
+		}
+
+		if strings.EqualFold(attachment.AttachmentType, "IMAGE") || strings.HasPrefix(strings.ToLower(attachment.MimeType), "image/") {
+			parts = append(parts, &arkmodel.ChatCompletionMessageContentPart{
+				Type: arkmodel.ChatCompletionMessageContentPartTypeImageURL,
+				ImageURL: &arkmodel.ChatMessageImageURL{
+					URL: url,
+				},
+			})
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(attachment.MimeType), "video/") {
+			parts = append(parts, &arkmodel.ChatCompletionMessageContentPart{
+				Type: arkmodel.ChatCompletionMessageContentPartTypeVideoURL,
+				VideoURL: &arkmodel.ChatMessageVideoURL{
+					URL: url,
+				},
+			})
+			continue
+		}
+
+		parts = append(parts, &arkmodel.ChatCompletionMessageContentPart{
+			Type: arkmodel.ChatCompletionMessageContentPartTypeText,
+			Text: url,
+		})
+	}
+
+	parts = append(parts, &arkmodel.ChatCompletionMessageContentPart{
+		Type: arkmodel.ChatCompletionMessageContentPartTypeText,
+		Text: text,
+	})
+	return parts, nil
+}
+
+func senderTypeToRole(sender int) string {
+	switch sender {
+	case store.SenderAssistant:
+		return arkmodel.ChatMessageRoleAssistant
+	case store.SenderSystem:
+		return arkmodel.ChatMessageRoleSystem
+	default:
+		return arkmodel.ChatMessageRoleUser
+	}
 }
 
 // NewConversation 创建会话。

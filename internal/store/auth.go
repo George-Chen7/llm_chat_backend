@@ -30,26 +30,26 @@ func GetUserByUsername(ctx context.Context, username string) (User, error) {
 
 	var u User
 	row := dbx.QueryRowContext(ctx, `
-		SELECT user_id, username, nickname, role, total_quota, remaining_quota
+		SELECT user_id, username, nickname, role, total_quota, used_quota
 		FROM users
 		WHERE username = ? AND status = 1
 	`, username)
-	if err := row.Scan(&u.UserID, &u.Username, &u.Nickname, &u.Role, &u.TotalQuota, &u.RemainingQuota); err != nil {
+	if err := row.Scan(&u.UserID, &u.Username, &u.Nickname, &u.Role, &u.TotalQuota, &u.UsedQuota); err != nil {
 		return User{}, err
 	}
 	return u, nil
 }
 
 // CreateUser 创建用户并返回新ID。
-func CreateUser(ctx context.Context, username, password, nickname, role string, total, remaining int64) (int, error) {
+func CreateUser(ctx context.Context, username, password, nickname, role string, total, used int64) (int, error) {
 	dbx, err := GetDB()
 	if err != nil {
 		return 0, err
 	}
 	res, err := dbx.ExecContext(ctx, `
-		INSERT INTO users (username, password, nickname, role, status, total_quota, remaining_quota)
+		INSERT INTO users (username, password, nickname, role, status, total_quota, used_quota)
 		VALUES (?, ?, ?, ?, 1, ?, ?)
-	`, username, password, nickname, role, total, remaining)
+	`, username, password, nickname, role, total, used)
 	if err != nil {
 		return 0, err
 	}
@@ -83,32 +83,33 @@ func CountUsersByUsername(ctx context.Context, username string) (int, error) {
 	return count, nil
 }
 
-// GetUserRemainingQuota 获取用户剩余额度。
-func GetUserRemainingQuota(ctx context.Context, userID int) (int, error) {
+// GetUserQuotaUsage 获取用户额度使用情况。
+func GetUserQuotaUsage(ctx context.Context, userID int) (int, int, error) {
 	dbx, err := GetDB()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	var remaining int
+	var total int
+	var used int
 	if err := dbx.QueryRowContext(ctx, `
-		SELECT remaining_quota
+		SELECT total_quota, used_quota
 		FROM users
 		WHERE user_id = ? AND status = 1
-	`, userID).Scan(&remaining); err != nil {
-		return 0, err
+	`, userID).Scan(&total, &used); err != nil {
+		return 0, 0, err
 	}
-	return remaining, nil
+	return total, used, nil
 }
 
-// DecreaseUserQuota 扣减用户额度（允许为负）。
-func DecreaseUserQuota(ctx context.Context, userID int, delta int) error {
+// IncreaseUserUsedQuota 增加用户已使用额度（允许超出总额）。
+func IncreaseUserUsedQuota(ctx context.Context, userID int, delta int) error {
 	dbx, err := GetDB()
 	if err != nil {
 		return err
 	}
 	_, err = dbx.ExecContext(ctx, `
 		UPDATE users
-		SET remaining_quota = remaining_quota - ?
+		SET used_quota = used_quota + ?
 		WHERE user_id = ?
 	`, delta, userID)
 	return err

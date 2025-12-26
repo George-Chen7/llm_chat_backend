@@ -35,11 +35,11 @@ func SendMessage(ctx context.Context, userID, conversationID int, contentType, c
 		return 0, 0, nil, "", ErrLLMNotReady
 	}
 
-	remaining, err := store.GetUserRemainingQuota(ctx, userID)
+	totalQuota, usedQuota, err := store.GetUserQuotaUsage(ctx, userID)
 	if err != nil {
 		return 0, 0, nil, "", err
 	}
-	if remaining <= 0 {
+	if usedQuota >= totalQuota {
 		return 0, 0, nil, "", ErrQuotaExceeded
 	}
 	attachmentsForLLM, err := store.LoadAttachmentsByIDs(ctx, userID, attachmentIDs)
@@ -67,7 +67,7 @@ func SendMessage(ctx context.Context, userID, conversationID int, contentType, c
 		totalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 	if totalTokens > 0 {
-		if err := store.DecreaseUserQuota(ctx, userID, totalTokens); err != nil {
+		if err := store.IncreaseUserUsedQuota(ctx, userID, totalTokens); err != nil {
 			return 0, 0, nil, "", err
 		}
 	}

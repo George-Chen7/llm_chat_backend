@@ -34,6 +34,8 @@ func HandleLogin(c *gin.Context) {
 		return
 	}
 
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("jwt_token", token, 24*3600, "/", "", false, true)
 	c.JSON(http.StatusOK, gin.H{
 		"err_msg":   "success",
 		"err_code":  0,
@@ -83,6 +85,8 @@ func HandleRefreshToken(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "token error", ErrCode: 500})
 		return
 	}
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("jwt_token", token, 24*3600, "/", "", false, true)
 	c.JSON(http.StatusOK, gin.H{
 		"err_msg":   "success",
 		"err_code":  0,

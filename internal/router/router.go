@@ -6,8 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"backend/internal/config"
-	"backend/internal/middlewares"
 	"backend/internal/controller"
+	"backend/internal/middlewares"
 )
 
 func NewRouter(cfg *config.Config) *gin.Engine {
@@ -44,7 +44,7 @@ func SetupRouter(r *gin.Engine) {
 	}
 
 	r.POST("/stt/request-stt", middlewares.AuthMiddleware(), controller.HandleSTTUpload)
-	r.POST("/tts/request/:message_id", middlewares.AuthMiddleware(), controller.HandleTTSConvert)
+	r.GET("/tts/request/:message_id", middlewares.AuthMiddleware(), controller.HandleTTSConvert)
 
 	admin := r.Group("/admin")
 	admin.Use(middlewares.AuthMiddleware())

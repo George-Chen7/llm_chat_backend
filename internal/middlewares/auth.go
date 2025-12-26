@@ -21,37 +21,38 @@ type MyClaims struct {
 // AuthMiddleware 完善后的 JWT 鉴权中间件
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 1. 获取 Authorization Header
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"err_msg": "未携带 Token", "err_code": 401})
+		tokenString := ""
+
+		if authHeader != "" {
+			parts := strings.SplitN(authHeader, " ", 2)
+			if !(len(parts) == 2 && parts[0] == "Bearer") {
+				c.JSON(http.StatusUnauthorized, gin.H{"err_msg": "invalid token format", "err_code": 401})
+				c.Abort()
+				return
+			}
+			tokenString = parts[1]
+		} else {
+			if cookieToken, err := c.Cookie("jwt_token"); err == nil && cookieToken != "" {
+				tokenString = cookieToken
+			}
+		}
+		if tokenString == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"err_msg": "missing token", "err_code": 401})
 			c.Abort()
 			return
 		}
 
-		// 2. 解析 Bearer 格式
-		parts := strings.SplitN(authHeader, " ", 2)
-		if !(len(parts) == 2 && parts[0] == "Bearer") {
-			c.JSON(http.StatusUnauthorized, gin.H{"err_msg": "Token 格式错误", "err_code": 401})
-			c.Abort()
-			return
-		}
-
-		tokenString := parts[1]
-
-		// 3. 解析并校验 Token
 		token, err := jwt.ParseWithClaims(tokenString, &MyClaims{}, func(token *jwt.Token) (interface{}, error) {
 			return JWTSecret, nil
 		})
 
-		// 4. 校验失败处理
 		if err != nil || !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{"err_msg": "无效或已过期的 Token", "err_code": 401})
+			c.JSON(http.StatusUnauthorized, gin.H{"err_msg": "invalid or expired token", "err_code": 401})
 			c.Abort()
 			return
 		}
 
-		// 5. 将解析出的用户信息存入上下文，方便后续 Handler 获取
 		if claims, ok := token.Claims.(*MyClaims); ok {
 			c.Set("username", claims.Username)
 		}

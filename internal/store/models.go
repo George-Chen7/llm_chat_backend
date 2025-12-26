@@ -2,12 +2,12 @@ package store
 
 // User 用户信息。
 type User struct {
-	UserID         int    `json:"user_id"`
-	Username       string `json:"username"`
-	Nickname       string `json:"nickname"`
-	Role           string `json:"role"`
-	TotalQuota     int    `json:"total_quota"`
-	RemainingQuota int    `json:"remaining_quota"`
+	UserID     int    `json:"user_id"`
+	Username   string `json:"username"`
+	Nickname   string `json:"nickname"`
+	Role       string `json:"role"`
+	TotalQuota int    `json:"total_quota"`
+	UsedQuota  int    `json:"used_quota"`
 }
 
 // ConversationInfo 对话概要信息。

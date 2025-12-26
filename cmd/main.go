@@ -39,6 +39,8 @@ func main() {
 		log.Fatalf("admin init failed: %v", err)
 	}
 
+	service.InitDashscope(cfg.Dashscope)
+
 	if err := llm.Init(cfg.LLM); err != nil {
 		log.Fatalf("LLM 初始化失败: %v", err)
 	}

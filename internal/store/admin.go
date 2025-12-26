@@ -16,7 +16,7 @@ func ListUsers(ctx context.Context, page, pageSize int) ([]User, int, error) {
 	}
 	offset := (page - 1) * pageSize
 	rows, err := dbx.QueryContext(ctx, `
-		SELECT user_id, username, nickname, role, total_quota, remaining_quota
+		SELECT user_id, username, nickname, role, total_quota, used_quota
 		FROM users
 		ORDER BY user_id DESC
 		LIMIT ? OFFSET ?
@@ -29,7 +29,7 @@ func ListUsers(ctx context.Context, page, pageSize int) ([]User, int, error) {
 	users := make([]User, 0)
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.UserID, &u.Username, &u.Nickname, &u.Role, &u.TotalQuota, &u.RemainingQuota); err != nil {
+		if err := rows.Scan(&u.UserID, &u.Username, &u.Nickname, &u.Role, &u.TotalQuota, &u.UsedQuota); err != nil {
 			return nil, 0, err
 		}
 		users = append(users, u)
@@ -41,18 +41,18 @@ func ListUsers(ctx context.Context, page, pageSize int) ([]User, int, error) {
 }
 
 // CreateUserWithQuota 创建用户并返回对象。
-func CreateUserWithQuota(ctx context.Context, username, password, nickname, role string, total, remaining int) (User, error) {
-	newID, err := CreateUser(ctx, username, password, nickname, role, int64(total), int64(remaining))
+func CreateUserWithQuota(ctx context.Context, username, password, nickname, role string, total, used int) (User, error) {
+	newID, err := CreateUser(ctx, username, password, nickname, role, int64(total), int64(used))
 	if err != nil {
 		return User{}, err
 	}
 	return User{
-		UserID:         newID,
-		Username:       username,
-		Nickname:       nickname,
-		Role:           role,
-		TotalQuota:     total,
-		RemainingQuota: remaining,
+		UserID:     newID,
+		Username:   username,
+		Nickname:   nickname,
+		Role:       role,
+		TotalQuota: total,
+		UsedQuota:  used,
 	}, nil
 }
 
@@ -63,9 +63,11 @@ func SetUserQuota(ctx context.Context, userID int, quota int) (bool, error) {
 		return false, err
 	}
 	res, err := dbx.ExecContext(ctx, `
-		UPDATE users SET total_quota = ?, remaining_quota = ?
+		UPDATE users
+		SET total_quota = ?,
+		    used_quota = CASE WHEN used_quota > ? THEN ? ELSE used_quota END
 		WHERE user_id = ?
-	`, quota, quota, userID)
+	`, quota, quota, quota, userID)
 	if err != nil {
 		return false, err
 	}

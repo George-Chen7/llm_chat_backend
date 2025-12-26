@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"backend/internal/config"
@@ -100,4 +103,26 @@ func defaultOSSExpire() time.Duration {
 		return time.Duration(ossConfig.TempURLExpireSeconds) * time.Second
 	}
 	return 15 * time.Minute
+}
+
+// BuildOSSObjectKey builds an OSS object key with optional sub-prefix.
+func BuildOSSObjectKey(subPrefix, filename string) string {
+	name := "upload.bin"
+	if strings.TrimSpace(filename) != "" {
+		name = filepath.Base(filename)
+	}
+	objectName := fmt.Sprintf("%d_%s", time.Now().UnixNano(), name)
+	prefix := strings.Trim(ossConfig.Prefix, "/")
+	if strings.TrimSpace(subPrefix) != "" {
+		sub := strings.Trim(subPrefix, "/")
+		if prefix == "" {
+			prefix = sub
+		} else {
+			prefix = path.Join(prefix, sub)
+		}
+	}
+	if prefix == "" {
+		return objectName
+	}
+	return path.Join(prefix, objectName)
 }

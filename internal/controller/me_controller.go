@@ -29,12 +29,12 @@ func HandleGetMeInfo(c *gin.Context) {
 		"err_msg":  "success",
 		"err_code": 0,
 		"user": gin.H{
-			"user_id":         user.UserID,
-			"username":        user.Username,
-			"nickname":        user.Nickname,
-			"role":            user.Role,
-			"total_quota":     user.TotalQuota,
-			"remaining_quota": user.RemainingQuota,
+			"user_id":     user.UserID,
+			"username":    user.Username,
+			"nickname":    user.Nickname,
+			"role":        user.Role,
+			"total_quota": user.TotalQuota,
+			"used_quota":  user.UsedQuota,
 		},
 	})
 }

@@ -8,11 +8,12 @@ import (
 )
 
 type Config struct {
-	Server ServerConfig   `yaml:"server"`
-	LLM    LLMConfig      `yaml:"llm"`
-	DB     DatabaseConfig `yaml:"db"`
-	OSS    OSSConfig      `yaml:"oss"`
-	Admin  AdminConfig    `yaml:"admin"`
+	Server    ServerConfig    `yaml:"server"`
+	LLM       LLMConfig       `yaml:"llm"`
+	DB        DatabaseConfig  `yaml:"db"`
+	OSS       OSSConfig       `yaml:"oss"`
+	Admin     AdminConfig     `yaml:"admin"`
+	Dashscope DashscopeConfig `yaml:"dashscope"`
 }
 
 type ServerConfig struct {
@@ -58,6 +59,18 @@ type AdminConfig struct {
 	Password   string `yaml:"password"`
 	Nickname   string `yaml:"nickname"`
 	TotalQuota int64  `yaml:"total_quota"`
+}
+
+type DashscopeConfig struct {
+	APIKey string                 `yaml:"api_key"`
+	STT    DashscopeServiceConfig `yaml:"stt"`
+	TTS    DashscopeServiceConfig `yaml:"tts"`
+}
+
+type DashscopeServiceConfig struct {
+	Model    string `yaml:"model"`
+	Endpoint string `yaml:"endpoint"`
+	Voice    string `yaml:"voice"`
 }
 
 func (d DatabaseConfig) DSN() string {

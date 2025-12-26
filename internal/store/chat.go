@@ -169,6 +169,25 @@ func ListAllMessages(ctx context.Context, userID, conversationID int) ([]Message
 	return items, ids, nil
 }
 
+// GetMessageContent 获取用户消息文本内容。
+func GetMessageContent(ctx context.Context, userID, messageID int) (string, error) {
+	dbx, err := GetDB()
+	if err != nil {
+		return "", err
+	}
+	var content string
+	row := dbx.QueryRowContext(ctx, `
+		SELECT m.content
+		FROM messages m
+		JOIN conversations c ON m.conversation_id = c.conversation_id
+		WHERE c.user_id = ? AND m.message_id = ?
+	`, userID, messageID)
+	if err := row.Scan(&content); err != nil {
+		return "", err
+	}
+	return content, nil
+}
+
 // InsertMessage 创建消息并返回 ID。
 func InsertMessage(ctx context.Context, conversationID int, senderType int, contentType, content string, tokenTotal int) (int, error) {
 	dbx, err := GetDB()

@@ -82,7 +82,7 @@ func EnsureAdmin(ctx context.Context, cfg config.AdminConfig) error {
 	if err != nil {
 		return err
 	}
-	_, err = store.CreateUser(ctx, cfg.Username, hashed, nickname, "ADMIN", total, total)
+	_, err = store.CreateUser(ctx, cfg.Username, hashed, nickname, "ADMIN", total, 0)
 	return err
 }
 

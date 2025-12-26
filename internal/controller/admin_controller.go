@@ -41,18 +41,18 @@ func HandleGetUserList(c *gin.Context) {
 // HandleAddUser 添加用户。
 func HandleAddUser(c *gin.Context) {
 	var req struct {
-		Username       string `json:"username" binding:"required"`
-		Password       string `json:"password" binding:"required"`
-		Nickname       string `json:"nickname" binding:"required"`
-		Role           string `json:"role" binding:"required"`
-		TotalQuota     int    `json:"total_quota" binding:"required"`
-		RemainingQuota int    `json:"remaining_quota" binding:"required"`
+		Username   string `json:"username" binding:"required"`
+		Password   string `json:"password" binding:"required"`
+		Nickname   string `json:"nickname" binding:"required"`
+		Role       string `json:"role" binding:"required"`
+		TotalQuota int    `json:"total_quota" binding:"required"`
+		UsedQuota  int    `json:"used_quota" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusOK, BaseResponse{ErrMsg: "invalid params", ErrCode: 400})
 		return
 	}
-	user, err := service.CreateUser(c.Request.Context(), req.Username, req.Password, req.Nickname, req.Role, req.TotalQuota, req.RemainingQuota)
+	user, err := service.CreateUser(c.Request.Context(), req.Username, req.Password, req.Nickname, req.Role, req.TotalQuota, req.UsedQuota)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, BaseResponse{ErrMsg: "db error", ErrCode: 500})
 		return

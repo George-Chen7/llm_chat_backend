@@ -111,7 +111,7 @@ func ListMessages(ctx context.Context, userID, conversationID, page, pageSize in
 		FROM messages m
 		JOIN conversations c ON m.conversation_id = c.conversation_id
 		WHERE c.user_id = ? AND m.conversation_id = ?
-		ORDER BY m.created_at ASC
+		ORDER BY m.created_at DESC
 		LIMIT ? OFFSET ?
 	`, userID, conversationID, pageSize, offset)
 	if err != nil {
